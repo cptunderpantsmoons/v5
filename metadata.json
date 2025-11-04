@@ -1,0 +1,5 @@
+{
+  "name": "CCA financial report gen v4",
+  "description": "An application that takes 2024 and 2025 financial documents, uses AI to analyze them, and generates a comparative management report with KPIs and visualizations. black white ",
+  "requestFramePermissions": []
+}
