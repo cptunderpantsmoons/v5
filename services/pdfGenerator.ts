@@ -130,7 +130,7 @@ const drawMarkdownContent = (doc: jsPDF, markdown: string, startY: number, margi
 };
 
 
-export const generateAASBPdf = (data: ReportData, companyName: string) => {
+export const generateAASBPdf = (data: ReportData, companyName: string): string => {
     const doc = new jsPDF('p', 'pt', 'a4');
     let yPos = 80; // Start y-position
     const pageHeight = doc.internal.pageSize.height;
@@ -388,5 +388,6 @@ export const generateAASBPdf = (data: ReportData, companyName: string) => {
         doc.text(`Page ${i} of ${totalPages}`, pageWidth - margin, pageHeight - 20, { align: 'right' });
     }
 
-    doc.save('AASB_Financial_Report_2025.pdf');
+    // Return the PDF data as a data URL
+    return doc.output('datauristring');
 };

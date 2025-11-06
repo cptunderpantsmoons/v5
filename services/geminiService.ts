@@ -1,61 +1,12 @@
-export type ReportData = {
-  companyName: string;
-  reportYear: string;
-  kpis: string[];
-  abn: string;
-  directorsDeclaration: string;
-  incomeStatement: {
-    totalRevenue: number;
-    totalExpenses: number;
-    netIncome: number;
-    grossProfitMargin: number;
-  };
-  balanceSheet: {
-    totalAssets: number;
-    totalLiabilities: number;
-    shareholdersEquity: number;
-  };
-  cashFlowStatement: {
-    operatingCashFlow: number;
-    investingCashFlow: number;
-    financingCashFlow: number;
-    netCashFlow: number;
-  };
-  cashFlow: {
-    operatingCashFlow: number;
-    investingCashFlow: number;
-    financingCashFlow: number;
-    netCashFlow: number;
-  };
-  keyMetrics: {
-    currentRatio: number;
-    debtToEquity: number;
-    returnOnEquity: number;
-    profitMargin: number;
-  };
-  analysis: {
-    strengths: string[];
-    weaknesses: string[];
-    opportunities: string[];
-    threats: string[];
-  };
-  summary: string;
-  notesToFinancialStatements: string;
-  audioSummary?: string;
-  dateGenerated: string;
+import type { ReportData as BaseReportData, VerificationResult as BaseVerificationResult } from '../types';
+
+export type ReportData = BaseReportData & {
+  companyName?: string;
+  reportYear?: string;
+  dateGenerated?: string;
 };
 
-export type VerificationResult = {
-  overallStatus: 'Pass' | 'Failed';
-  issues: Array<{
-    category: 'Mathematical' | 'Inconsistency' | 'Missing';
-    description: string;
-    severity: 'low' | 'medium' | 'high';
-    suggestion: string;
-  }>;
-  verified: boolean;
-  timestamp: string;
-};
+export type VerificationResult = BaseVerificationResult;
 
 export type ApiConfig = {
   provider: 'gemini' | 'openrouter';
@@ -75,48 +26,66 @@ export async function generateFinancialReport(
   await new Promise(resolve => setTimeout(resolve, 2000));
   
   return {
-    companyName: 'Example Company',
-    reportYear: '2025',
-    kpis: ['Revenue Growth: 15%', 'Profit Margin: 20%', 'ROE: 22%'],
+    summary: 'Financial report generated successfully.',
+    kpis: [
+      { name: 'Revenue Growth', value2025: '15%', value2024: '10%', changePercentage: 5.0 },
+      { name: 'Profit Margin', value2025: '20%', value2024: '18%', changePercentage: 2.0 },
+      { name: 'Return on Equity', value2025: '22%', value2024: '20%', changePercentage: 2.0 }
+    ],
     abn: '12 345 678 901',
-    directorsDeclaration: 'Directors confirm the financial statements are true and correct',
+    directorsDeclaration: {
+      directors: [
+        { name: 'John Director', title: 'Managing Director' }
+      ],
+      date: new Date().toISOString().split('T')[0]
+    },
     incomeStatement: {
-      totalRevenue: 1000000,
-      totalExpenses: 800000,
-      netIncome: 200000,
-      grossProfitMargin: 0.2
+      revenue: [
+        { item: 'Sales Revenue', amount2025: 1000000, amount2024: 800000 }
+      ],
+      expenses: [
+        { item: 'Operating Expenses', amount2025: 800000, amount2024: 640000 }
+      ],
+      grossProfit: { amount2025: 200000, amount2024: 160000 },
+      operatingIncome: { amount2025: 200000, amount2024: 160000 },
+      netProfit: { amount2025: 200000, amount2024: 160000 }
     },
     balanceSheet: {
-      totalAssets: 1500000,
-      totalLiabilities: 600000,
-      shareholdersEquity: 900000
+      currentAssets: [
+        { item: 'Cash and Cash Equivalents', amount2025: 500000, amount2024: 400000 }
+      ],
+      nonCurrentAssets: [
+        { item: 'Property, Plant and Equipment', amount2025: 1000000, amount2024: 800000 }
+      ],
+      currentLiabilities: [
+        { item: 'Trade and Other Payables', amount2025: 300000, amount2024: 250000 }
+      ],
+      nonCurrentLiabilities: [
+        { item: 'Long-term Debt', amount2025: 200000, amount2024: 200000 }
+      ],
+      equity: [
+        { item: 'Share Capital', amount2025: 500000, amount2024: 500000 },
+        { item: 'Retained Earnings', amount2025: 500000, amount2024: 250000 }
+      ],
+      totalAssets: { amount2025: 1500000, amount2024: 1200000 },
+      totalLiabilities: { amount2025: 500000, amount2024: 450000 },
+      totalEquity: { amount2025: 1000000, amount2024: 750000 }
     },
     cashFlowStatement: {
-      operatingCashFlow: 250000,
-      investingCashFlow: -50000,
-      financingCashFlow: -30000,
-      netCashFlow: 170000
+      operatingActivities: [
+        { item: 'Net Income', amount2025: 200000, amount2024: 160000 }
+      ],
+      investingActivities: [
+        { item: 'Capital Expenditures', amount2025: -50000, amount2024: -30000 }
+      ],
+      financingActivities: [
+        { item: 'Debt Repayment', amount2025: 0, amount2024: -20000 }
+      ],
+      netChangeInCash: { amount2025: 150000, amount2024: 110000 }
     },
-    cashFlow: {
-      operatingCashFlow: 250000,
-      investingCashFlow: -50000,
-      financingCashFlow: -30000,
-      netCashFlow: 170000
-    },
-    keyMetrics: {
-      currentRatio: 2.5,
-      debtToEquity: 0.67,
-      returnOnEquity: 0.22,
-      profitMargin: 0.2
-    },
-    analysis: {
-      strengths: ['Strong revenue growth', 'Healthy profit margins'],
-      weaknesses: ['High operating expenses'],
-      opportunities: ['Market expansion', 'Cost optimization'],
-      threats: ['Economic uncertainty', 'Competition']
-    },
-    summary: 'Financial report generated successfully.',
-    notesToFinancialStatements: 'Notes to financial statements - to be completed',
+    notesToFinancialStatements: '## Note 1: Accounting Policies\nThe financial statements have been prepared in accordance with Australian Accounting Standards.',
+    companyName: 'Example Company',
+    reportYear: '2025',
     dateGenerated: new Date().toISOString()
   };
 }

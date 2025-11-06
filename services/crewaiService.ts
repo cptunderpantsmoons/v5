@@ -20,15 +20,17 @@ export interface Agent {
   memory: boolean;
 }
 
+export interface ToolParameter {
+  name: string;
+  type: 'string' | 'number' | 'boolean' | 'file' | 'array';
+  description: string;
+  required: boolean;
+}
+
 export interface Tool {
   name: string;
   description: string;
-  parameters: Array<{
-    name: string;
-    type: 'string' | 'number' | 'boolean' | 'file' | 'array';
-    description: string;
-    required: boolean;
-  }>;
+  parameters: ToolParameter[];
   function: (params: any) => Promise<any>;
 }
 
@@ -57,6 +59,205 @@ declare global {
     };
   };
   var XLSX: any;
+}
+
+// Natural Language to Agent Converter (moved from crewaiWorkflow)
+export class NaturalLanguageAgentConfig {
+  static parseAgentDescription(description: string): Partial<Agent> {
+    const agentConfig: Partial<Agent> = {
+      id: this.generateId(description),
+      name: this.extractName(description),
+      role: this.extractRole(description),
+      goal: this.extractGoal(description),
+      backstory: this.extractBackstory(description),
+      tools: this.extractTools(description),
+      llm: this.extractModelConfig(description),
+      verbose: this.extractVerbose(description),
+      allow_delegation: this.extractDelegation(description),
+      max_iter: this.extractMaxIter(description),
+      max_execution_time: this.extractMaxTime(description),
+      memory: this.extractMemory(description)
+    };
+
+    return agentConfig;
+  }
+
+  private static generateId(description: string): string {
+    return description.toLowerCase()
+      .replace(/[^a-z0-9]/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '') + '-' + Date.now();
+  }
+
+  private static extractName(description: string): string {
+    const namePatterns = [
+      /(?:called|named|for)\s+([A-Z][a-zA-Z\s]+?)(?:\s|,|\.|$)/i,
+      /agent\s+([A-Z][a-zA-Z\s]+?)(?:\s|,|\.|$)/i,
+      /create\s+(?:a\s+)?([A-Z][a-zA-Z\s]+?)\s+agent/i
+    ];
+
+    for (const pattern of namePatterns) {
+      const match = description.match(pattern);
+      if (match) return match[1].trim();
+    }
+
+    return 'Unnamed Agent';
+  }
+
+  private static extractRole(description: string): string {
+    const rolePatterns = [
+      /(?:role|position)\s*(?:is|:)\s*([^.!?]+)/i,
+      /should\s+([^.!?]+)/i,
+      /(?:specializes?|responsible)\s+for\s+([^.!?]+)/i
+    ];
+
+    for (const pattern of rolePatterns) {
+      const match = description.match(pattern);
+      if (match) return match[1].trim();
+    }
+
+    return 'Specialized AI agent';
+  }
+
+  private static extractGoal(description: string): string {
+    const goalPatterns = [
+      /(?:goal|objective|purpose)\s*(?:is|:)\s*([^.!?]+)/i,
+      /to\s+([^.!?]+?)(?:\s|$|\.)/i,
+      /ensure\s+([^.!?]+)/i
+    ];
+
+    for (const pattern of goalPatterns) {
+      const match = description.match(pattern);
+      if (match) return match[1].trim();
+    }
+
+    return 'Complete assigned tasks efficiently and accurately.';
+  }
+
+  private static extractBackstory(description: string): string {
+    const backstoryPatterns = [
+      /(?:background|experience|expertise)\s*(?:is|:)\s*([^.!?]+)/i,
+      /with\s+([^.!?]+?)(?:\s|,|\.|$)/i,
+      /(?:trained|designed)\s+(?:to\s+)?([^.!?]+)/i
+    ];
+
+    for (const pattern of backstoryPatterns) {
+      const match = description.match(pattern);
+      if (match) return match[1].trim();
+    }
+
+    return 'An experienced AI agent with expertise in financial analysis and document processing.';
+  }
+
+  private static extractTools(description: string): Tool[] {
+    const tools: Tool[] = [];
+    
+    // Extract tool mentions
+    const toolMentions = description.match(/(?:using|with|via)\s+([a-zA-Z\s]+?)(?:\s|,|\.|$)/gi) || [];
+    
+    toolMentions.forEach(mention => {
+      const toolName = mention.replace(/(?:using|with|via)\s+/i, '').trim();
+      if (toolName.length > 2) {
+        tools.push({
+          name: toolName.toLowerCase().replace(/\s+/g, '_'),
+          description: `Tool for ${toolName}`,
+          parameters: [
+            { name: 'param1', type: 'string', description: 'Parameter for tool', required: false }
+          ],
+          function: async () => ({ message: `${toolName} functionality not implemented` })
+        });
+      }
+    });
+
+    // Add default financial analysis tools
+    if (tools.length === 0) {
+      tools.push(
+        {
+          name: 'document_analyzer',
+          description: 'Analyzes financial documents and extracts key information',
+          parameters: [
+            { name: 'document', type: 'file', description: 'Document file to analyze', required: true },
+            { name: 'analysis_type', type: 'string', description: 'Type of analysis to perform', required: false }
+          ],
+          function: async (params: any) => ({ analysis: 'Document analyzed' })
+        },
+        {
+          name: 'calculator',
+          description: 'Performs financial calculations and verifications',
+          parameters: [
+            { name: 'expression', type: 'string', description: 'Mathematical expression to calculate', required: true }
+          ],
+          function: async (params: any) => ({ result: 0 })
+        }
+      );
+    }
+
+    return tools;
+  }
+
+  private static extractModelConfig(description: string): ApiConfig {
+    // Extract model preferences from description
+    const modelPatterns = [
+      /(?:model|llm|using)\s+(?:should\s+)?(?:be\s+)?([a-zA-Z0-9\-\/]+)/i,
+      /(?:gemini|claude|gpt|openai|anthropic)/i
+    ];
+
+    let model = 'gemini-2.5-flash';
+    let provider: 'gemini' | 'openrouter' = 'gemini';
+
+    for (const pattern of modelPatterns) {
+      const match = description.match(pattern);
+      if (match) {
+        const modelStr = match[1] || match[0];
+        if (modelStr.includes('/')) {
+          model = modelStr;
+          provider = 'openrouter';
+        } else {
+          model = modelStr;
+        }
+        break;
+      }
+    }
+
+    return {
+      provider,
+      apiKey: '',
+      model,
+      voiceModel: 'elevenlabs/eleven-multilingual-v2'
+    };
+  }
+
+  private static extractVerbose(description: string): boolean {
+    return description.toLowerCase().includes('verbose') || 
+           description.toLowerCase().includes('detailed output');
+  }
+
+  private static extractDelegation(description: string): boolean {
+    return description.toLowerCase().includes('delegate') || 
+           description.toLowerCase().includes('can delegate tasks');
+  }
+
+  private static extractMaxIter(description: string): number {
+    const match = description.match(/(\d+)\s*(?:iterations?|times?)/i);
+    return match ? parseInt(match[1]) : 3;
+  }
+
+  private static extractMaxTime(description: string): number {
+    const match = description.match(/(\d+)\s*(?:minutes?|seconds?|hours?)/i);
+    if (!match) return 300; // 5 minutes default
+    
+    const value = parseInt(match[1]);
+    const unit = match[0].toLowerCase();
+    
+    if (unit.includes('hour')) return value * 3600;
+    if (unit.includes('minute')) return value * 60;
+    return value;
+  }
+
+  private static extractMemory(description: string): boolean {
+    return description.toLowerCase().includes('memory') || 
+           description.toLowerCase().includes('remember');
+  }
 }
 
 // CrewAI Service class for orchestrating AI agents
@@ -199,6 +400,9 @@ export class CrewAIService {
   };
 }
 
+// Export Workflow type from crewaiWorkflow
+export type { Workflow } from './crewaiWorkflow';
+
 // Tool definitions for financial report generation
 export const createFinancialTools = (): Tool[] => [
   {
@@ -225,7 +429,7 @@ export const createFinancialTools = (): Tool[] => [
     name: 'report_generator',
     description: 'Generates structured financial reports',
     parameters: [
-      { name: 'data', type: 'array', description: 'Financial data to include in report', required: true }, // Fixed: 'object' -> 'array'
+      { name: 'data', type: 'array', description: 'Financial data to include in report', required: true },
       { name: 'template', type: 'string', description: 'Report template to use', required: false }
     ],
     function: async (params: any) => {
@@ -251,7 +455,7 @@ export const createFinancialTools = (): Tool[] => [
     name: 'data_verifier',
     description: 'Verifies data consistency and accuracy',
     parameters: [
-      { name: 'report_data', type: 'array', description: 'Report data to verify', required: true }, // Fixed: 'object' -> 'array'
+      { name: 'report_data', type: 'array', description: 'Report data to verify', required: true },
       { name: 'validation_rules', type: 'array', description: 'Specific validation rules to apply', required: false }
     ],
     function: async (params: any) => {
