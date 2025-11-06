@@ -613,7 +613,7 @@ export async function generateAudioSummary(summaryText: string): Promise<Blob> {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
         const response = await ai.models.generateContent({
             model: "gemini-2.5-flash-preview-tts",
-            contents: [{ parts: [{ text: `Provide a professional, verbal summary of the following financial report analysis: ${summaryText}` }] }],
+            contents: { parts: [{ text: `Provide a professional, verbal summary of the following financial report analysis: ${summaryText}` }] },
             config: {
                 responseModalities: [Modality.AUDIO],
                 speechConfig: {
