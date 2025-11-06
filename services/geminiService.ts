@@ -1,4 +1,3 @@
-import { GoogleGenAI, Type, Modality } from '@google/genai';
 import jsPDF from 'jspdf';
 import type { ReportData, VerificationResult } from '../types';
 
@@ -6,15 +5,19 @@ import type { ReportData, VerificationResult } from '../types';
 // It is loaded via the script tag in index.html, not as a module.
 declare const XLSX: any;
 
+// Hardcoded Z.ai API key for private application
+// TODO: Replace this with your actual Z.ai API key
+const HARDCODED_API_KEY = "YOUR_ZAI_API_KEY_HERE";
+
 interface ApiConfig {
-    provider: 'gemini' | 'openrouter';
+    provider: 'zai';
     apiKey: string;
     model: string;
     voiceModel?: string;
 }
 
-// Helper function to convert a File object to a GoogleGenerativeAI.Part object.
-async function fileToGenerativePart(file: File): Promise<{ inlineData: { data: string; mimeType: string; }; }> {
+// Helper function to convert a File object to a base64 string.
+async function fileToBase64(file: File): Promise<{ data: string; mimeType: string; }> {
     const excelMimeTypes = [
         'application/vnd.ms-excel',
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -35,7 +38,7 @@ async function fileToGenerativePart(file: File): Promise<{ inlineData: { data: s
 
         workbook.SheetNames.forEach((sheetName, index) => {
             if (index > 0) {
-                pdf.addPage();
+              pdf.addPage();
             }
             yPosition = margin;
             
@@ -63,10 +66,8 @@ async function fileToGenerativePart(file: File): Promise<{ inlineData: { data: s
         const base64Data = pdfDataUri.split(',')[1];
         
         return {
-            inlineData: {
-                data: base64Data,
-                mimeType: 'application/pdf', // Send the converted file as a PDF
-            },
+            data: base64Data,
+            mimeType: 'application/pdf', // Send the converted file as a PDF
         };
     }
 
@@ -82,32 +83,30 @@ async function fileToGenerativePart(file: File): Promise<{ inlineData: { data: s
     });
   
     return {
-      inlineData: {
-        data: await base64EncodedDataPromise,
-        mimeType: file.type,
-      },
+      data: await base64EncodedDataPromise,
+      mimeType: file.type,
     };
 }
 
 const singleFinancialValueSchema = {
-    type: Type.OBJECT,
+    type: "OBJECT",
     properties: {
-        amount2025: { type: Type.NUMBER },
-        amount2024: { type: Type.NUMBER },
-        noteRef: { type: Type.NUMBER, description: "A unique number referencing a detailed note.", nullable: true },
+        amount2025: { type: "NUMBER" },
+        amount2024: { type: "NUMBER" },
+        noteRef: { type: "NUMBER", description: "A unique number referencing a detailed note.", nullable: true },
     },
     required: ['amount2025', 'amount2024'],
 };
 
 const financialItemsArraySchema = {
-    type: Type.ARRAY,
+    type: "ARRAY",
     items: {
-        type: Type.OBJECT,
+        type: "OBJECT",
         properties: {
-            item: { type: Type.STRING },
-            amount2025: { type: Type.NUMBER },
-            amount2024: { type: Type.NUMBER },
-            noteRef: { type: Type.NUMBER, description: "A unique number referencing a detailed note.", nullable: true },
+            item: { type: "STRING" },
+            amount2025: { type: "NUMBER" },
+            amount2024: { type: "NUMBER" },
+            noteRef: { type: "NUMBER", description: "A unique number referencing a detailed note.", nullable: true },
         },
         required: ['item', 'amount2025', 'amount2024'],
     },
@@ -197,50 +196,50 @@ const getBasePrompt = () => `
     `;
 
 const responseSchema = {
-    type: Type.OBJECT,
+    type: "OBJECT",
     properties: {
         summary: {
-            type: Type.STRING,
+            type: "STRING",
             description: 'A concise, professional summary of the company\'s financial performance, position, and cash flows, highlighting significant changes and potential areas of concern.',
         },
         kpis: {
-            type: Type.ARRAY,
+            type: "ARRAY",
             description: 'Key Performance Indicators.',
             items: {
-                type: Type.OBJECT,
+                type: "OBJECT",
                 properties: {
-                    name: { type: Type.STRING },
-                    value2025: { type: Type.STRING },
-                    value2024: { type: Type.STRING },
-                    changePercentage: { type: Type.NUMBER },
+                    name: { type: "STRING" },
+                    value2025: { type: "STRING" },
+                    value2024: { type: "STRING" },
+                    changePercentage: { type: "NUMBER" },
                 },
                 required: ['name', 'value2025', 'value2024', 'changePercentage'],
             },
         },
         abn: {
-            type: Type.STRING,
+            type: "STRING",
             description: 'The Australian Business Number (ABN) of the company, extracted from the documents.',
         },
         directorsDeclaration: {
-            type: Type.OBJECT,
+            type: "OBJECT",
             properties: {
                 directors: {
-                    type: Type.ARRAY,
+                    type: "ARRAY",
                     items: {
-                        type: Type.OBJECT,
+                        type: "OBJECT",
                         properties: {
-                            name: { type: Type.STRING },
-                            title: { type: Type.STRING },
+                            name: { type: "STRING" },
+                            title: { type: "STRING" },
                         },
                         required: ['name', 'title'],
                     }
                 },
-                date: { type: Type.STRING, description: "The date of the directors' declaration, e.g., '08 Jan 2025'." },
+                date: { type: "STRING", description: "The date of the directors' declaration, e.g., '08 Jan 2025'." },
             },
             required: ['directors', 'date'],
         },
         incomeStatement: {
-            type: Type.OBJECT,
+            type: "OBJECT",
             properties: {
                 revenue: financialItemsArraySchema,
                 expenses: financialItemsArraySchema,
@@ -251,7 +250,7 @@ const responseSchema = {
             required: ['revenue', 'expenses', 'grossProfit', 'operatingIncome', 'netProfit'],
         },
         balanceSheet: {
-            type: Type.OBJECT,
+            type: "OBJECT",
             properties: {
                 currentAssets: financialItemsArraySchema,
                 nonCurrentAssets: financialItemsArraySchema,
@@ -265,7 +264,7 @@ const responseSchema = {
             required: ['currentAssets', 'nonCurrentAssets', 'currentLiabilities', 'nonCurrentLiabilities', 'equity', 'totalAssets', 'totalLiabilities', 'totalEquity'],
         },
         cashFlowStatement: {
-            type: Type.OBJECT,
+            type: "OBJECT",
             properties: {
                 operatingActivities: financialItemsArraySchema,
                 investingActivities: financialItemsArraySchema,
@@ -275,7 +274,7 @@ const responseSchema = {
             required: ['operatingActivities', 'investingActivities', 'financingActivities', 'netChangeInCash'],
         },
         notesToFinancialStatements: {
-            type: Type.STRING,
+            type: "STRING",
             description: "The complete 'Notes to the Financial Statements' section, formatted as a single GitHub-flavored Markdown string. It must contain all required notes with proper hierarchical numbering (e.g., '**Note 1**', '**(a)**', '**(i)**')."
         }
     },
@@ -285,118 +284,85 @@ const responseSchema = {
 export async function generateFinancialReport(file2024: File, file2025: File, config: ApiConfig): Promise<ReportData> {
   const prompt = KNOWLEDGE_BASE + getBasePrompt();
 
-  if (config.provider === 'openrouter') {
-    const jsonSchemaInstructions = `Your output MUST be a single, valid JSON object that strictly adheres to the structure I will describe. Do not include any text, markdown, or explanations before or after the JSON object.
-    The JSON structure is as follows, please populate it completely:
-    {
-      "summary": "string",
-      "kpis": [ { "name": "string", "value2025": "string", "value2024": "string", "changePercentage": "number" } ],
-      "abn": "string",
-      "directorsDeclaration": { "directors": [ { "name": "string", "title": "string" } ], "date": "string" },
-      "incomeStatement": { 
-          "revenue": [ { "item": "string", "amount2025": "number", "amount2024": "number", "noteRef": "number|null" } ], 
-          "expenses": [ { "item": "string", "amount2025": "number", "amount2024": "number", "noteRef": "number|null" } ], 
-          "grossProfit": { "amount2025": "number", "amount2024": "number" }, 
-          "operatingIncome": { "amount2025": "number", "amount2024": "number" },
-          "netProfit": { "amount2025": "number", "amount2024": "number" }
-      },
-      "balanceSheet": {
-          "currentAssets": [ { "item": "string", "amount2025": "number", "amount2024": "number" } ],
-          "nonCurrentAssets": [ { "item": "string", "amount2025": "number", "amount2024": "number" } ],
-          "currentLiabilities": [ { "item": "string", "amount2025": "number", "amount2024": "number" } ],
-          "nonCurrentLiabilities": [ { "item": "string", "amount2025": "number", "amount2024": "number" } ],
-          "equity": [ { "item": "string", "amount2025": "number", "amount2024": "number" } ],
-          "totalAssets": { "amount2025": "number", "amount2024": "number" },
-          "totalLiabilities": { "amount2025": "number", "amount2024": "number" },
-          "totalEquity": { "amount2025": "number", "amount2024": "number" }
-      },
-      "cashFlowStatement": {
-          "operatingActivities": [ { "item": "string", "amount2025": "number", "amount2024": "number" } ],
-          "investingActivities": [ { "item": "string", "amount2025": "number", "amount2024": "number" } ],
-          "financingActivities": [ { "item": "string", "amount2025": "number", "amount2024": "number" } ],
-          "netChangeInCash": { "amount2025": "number", "amount2024": "number" }
-      },
-      "notesToFinancialStatements": "string (A single markdown string containing all notes)"
-    }
-    Ensure all monetary values are numbers, removing currency symbols and using negative signs for losses.
-    `;
+  const jsonSchemaInstructions = `Your output MUST be a single, valid JSON object that strictly adheres to the structure I will describe. Do not include any text, markdown, or explanations before or after the JSON object.
+  The JSON structure is as follows, please populate it completely:
+  {
+    "summary": "string",
+    "kpis": [ { "name": "string", "value2025": "string", "value2024": "string", "changePercentage": "number" } ],
+    "abn": "string",
+    "directorsDeclaration": { "directors": [ { "name": "string", "title": "string" } ], "date": "string" },
+    "incomeStatement": { 
+        "revenue": [ { "item": "string", "amount2025": "number", "amount2024": "number", "noteRef": "number|null" } ], 
+        "expenses": [ { "item": "string", "amount2025": "number", "amount2024": "number", "noteRef": "number|null" } ], 
+        "grossProfit": { "amount2025": "number", "amount2024": "number" }, 
+        "operatingIncome": { "amount2025": "number", "amount2024": "number" },
+        "netProfit": { "amount2025": "number", "amount2024": "number" }
+    },
+    "balanceSheet": {
+        "currentAssets": [ { "item": "string", "amount2025": "number", "amount2024": "number" } ],
+        "nonCurrentAssets": [ { "item": "string", "amount2025": "number", "amount2024": "number" } ],
+        "currentLiabilities": [ { "item": "string", "amount2025": "number", "amount2024": "number" } ],
+        "nonCurrentLiabilities": [ { "item": "string", "amount2025": "number", "amount2024": "number" } ],
+        "equity": [ { "item": "string", "amount2025": "number", "amount2024": "number" } ],
+        "totalAssets": { "amount2025": "number", "amount2024": "number" },
+        "totalLiabilities": { "amount2025": "number", "amount2024": "number" },
+        "totalEquity": { "amount2025": "number", "amount2024": "number" }
+    },
+    "cashFlowStatement": {
+        "operatingActivities": [ { "item": "string", "amount2025": "number", "amount2024": "number" } ],
+        "investingActivities": [ { "item": "string", "amount2025": "number", "amount2024": "number" } ],
+        "financingActivities": [ { "item": "string", "amount2025": "number", "amount2024": "number" } ],
+        "netChangeInCash": { "amount2025": "number", "amount2024": "number" }
+    },
+    "notesToFinancialStatements": "string (A single markdown string containing all notes)"
+  }
+  Ensure all monetary values are numbers, removing currency symbols and using negative signs for losses.
+  `;
 
-    try {
-        const part2024 = await fileToGenerativePart(file2024);
-        const part2025 = await fileToGenerativePart(file2025);
+  try {
+      const part2024 = await fileToBase64(file2024);
+      const part2025 = await fileToBase64(file2025);
 
-        const apiResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-            method: "POST",
-            headers: {
-                "Authorization": `Bearer ${config.apiKey}`,
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-                model: config.model,
-                response_format: { "type": "json_object" },
-                messages: [
-                    {
-                        "role": "user",
-                        "content": [
-                            { "type": "text", "text": prompt + jsonSchemaInstructions },
-                            { 
-                                "type": "image_url", 
-                                "image_url": { "url": `data:${part2024.inlineData.mimeType};base64,${part2024.inlineData.data}` }
-                            },
-                            { 
-                                "type": "image_url", 
-                                "image_url": { "url": `data:${part2025.inlineData.mimeType};base64,${part2025.inlineData.data}` }
-                            },
-                        ]
-                    }
-                ]
-            })
-        });
+      const apiResponse = await fetch("https://docs.z.ai/api-reference/introduction", {
+          method: "POST",
+          headers: {
+              "Authorization": `Bearer ${HARDCODED_API_KEY}`,
+              "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+              model: config.model,
+              response_format: { "type": "json_object" },
+              messages: [
+                  {
+                      "role": "user",
+                      "content": [
+                          { "type": "text", "text": prompt + jsonSchemaInstructions },
+                          { 
+                              "type": "image_url", 
+                              "image_url": { "url": `data:${part2024.mimeType};base64,${part2024.data}` }
+                          },
+                          { 
+                              "type": "image_url", 
+                              "image_url": { "url": `data:${part2025.mimeType};base64,${part2025.data}` }
+                          },
+                      ]
+                  }
+              ]
+          })
+      });
 
-        if (!apiResponse.ok) {
-            const errorBody = await apiResponse.text();
-            throw new Error(`OpenRouter API error (${apiResponse.status}): ${errorBody}`);
-        }
+      if (!apiResponse.ok) {
+          const errorBody = await apiResponse.text();
+          throw new Error(`Z.ai API error (${apiResponse.status}): ${errorBody}`);
+      }
 
-        const responseData = await apiResponse.json();
-        const jsonText = responseData.choices[0].message.content;
-        return JSON.parse(jsonText) as ReportData;
+      const responseData = await apiResponse.json();
+      const jsonText = responseData.choices[0].message.content;
+      return JSON.parse(jsonText) as ReportData;
 
-    } catch (error) {
-        console.error("Error calling OpenRouter API:", error);
-        throw new Error("The AI model failed to process the financial data via OpenRouter. Please check your API key, model selection, and that you are using image files.");
-    }
-
-  } else { // Gemini Provider
-    const effectiveApiKey = config.apiKey || process.env.API_KEY as string;
-    if (!effectiveApiKey) {
-        throw new Error("Gemini API key is missing. Please provide one in the config or set the environment variable.");
-    }
-    const ai = new GoogleGenAI({ apiKey: effectiveApiKey });
-    
-    try {
-        const part2024 = await fileToGenerativePart(file2024);
-        const part2025 = await fileToGenerativePart(file2025);
-
-        const response = await ai.models.generateContent({
-            model: config.model,
-            contents: { parts: [
-                {text: prompt},
-                part2024,
-                part2025
-            ]},
-            config: {
-                responseMimeType: "application/json",
-                responseSchema: responseSchema,
-            },
-        });
-        const jsonText = response.text.trim();
-        const parsedData = JSON.parse(jsonText) as ReportData;
-        return parsedData;
-    } catch (error) {
-        console.error("Error calling Gemini API:", error);
-        throw new Error("The AI model failed to process the financial data. Please check if the uploaded documents are clear and valid financial reports.");
-    }
+  } catch (error) {
+      console.error("Error calling Z.ai API:", error);
+      throw new Error("The AI model failed to process the financial data via Z.ai. Please check your API key, model selection, and that you are using image files.");
   }
 }
 
@@ -480,61 +446,38 @@ export async function fixFinancialReport(
     Now, provide the corrected and complete JSON object.
     `;
 
-    if (config.provider === 'openrouter') {
-        const jsonSchemaInstructions = `Your output MUST be a single, valid JSON object that strictly adheres to the structure provided in the example report. Do not include any text, markdown, or explanations before or after the JSON object.`;
-        try {
-            const apiResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-                method: "POST",
-                headers: {
-                    "Authorization": `Bearer ${config.apiKey}`,
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                    model: config.model,
-                    response_format: { "type": "json_object" },
-                    messages: [{
-                        "role": "user",
-                        "content": correctionPrompt + jsonSchemaInstructions
-                    }]
-                })
-            });
-
-            if (!apiResponse.ok) {
-                const errorBody = await apiResponse.text();
-                throw new Error(`OpenRouter API error during correction (${apiResponse.status}): ${errorBody}`);
-            }
-
-            const responseData = await apiResponse.json();
-            const jsonText = responseData.choices[0].message.content;
-            return JSON.parse(jsonText) as ReportData;
-
-        } catch (error) {
-            console.error("Error calling OpenRouter API for correction:", error);
-            throw new Error("The AI model failed to correct the financial data via OpenRouter.");
-        }
-    } else { // Gemini Provider
-        const effectiveApiKey = config.apiKey || process.env.API_KEY as string;
-        if (!effectiveApiKey) throw new Error("Gemini API key is missing.");
-        const ai = new GoogleGenAI({ apiKey: effectiveApiKey });
-
-        try {
-            const response = await ai.models.generateContent({
+    const jsonSchemaInstructions = `Your output MUST be a single, valid JSON object that strictly adheres to the structure provided in the example report. Do not include any text, markdown, or explanations before or after the JSON object.`;
+    try {
+        const apiResponse = await fetch("https://docs.z.ai/api-reference/introduction", {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${HARDCODED_API_KEY}`,
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
                 model: config.model,
-                contents: { parts: [{ text: correctionPrompt }] },
-                config: {
-                    responseMimeType: "application/json",
-                    responseSchema: responseSchema,
-                },
-            });
-            const jsonText = response.text.trim();
-            return JSON.parse(jsonText) as ReportData;
-        } catch (error) {
-            console.error("Error calling Gemini API for correction:", error);
-            throw new Error("The AI model failed to correct the financial data.");
+                response_format: { "type": "json_object" },
+                messages: [{
+                    "role": "user",
+                    "content": correctionPrompt + jsonSchemaInstructions
+                }]
+            })
+        });
+
+        if (!apiResponse.ok) {
+            const errorBody = await apiResponse.text();
+            throw new Error(`Z.ai API error during correction (${apiResponse.status}): ${errorBody}`);
         }
+
+        const responseData = await apiResponse.json();
+        const jsonText = responseData.choices[0].message.content;
+        return JSON.parse(jsonText) as ReportData;
+
+    } catch (error) {
+        console.error("Error calling Z.ai API for correction:", error);
+        throw new Error("The AI model failed to correct the financial data via Z.ai.");
     }
 }
-
 
 const createWavBlobFromPcm = (base64Pcm: string): Blob => {
     const decodeBase64 = (base64: string) => {
@@ -582,64 +525,12 @@ const createWavBlobFromPcm = (base64Pcm: string): Blob => {
     return new Blob([view], { type: 'audio/wav' });
 };
 
-
 export async function generateAudioSummary(summaryText: string): Promise<Blob> {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
-    try {
-        const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash-preview-tts",
-            contents: [{ parts: [{ text: `Provide a professional, verbal summary of the following financial report analysis: ${summaryText}` }] }],
-            config: {
-                responseModalities: [Modality.AUDIO],
-                speechConfig: {
-                    voiceConfig: {
-                        prebuiltVoiceConfig: { voiceName: 'Kore' }, // A professional and clear voice
-                    },
-                },
-            },
-        });
-
-        const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-        if (!base64Audio) {
-            throw new Error("No audio data was returned from the API.");
-        }
-        return createWavBlobFromPcm(base64Audio);
-    } catch (error) {
-        console.error("Error generating audio summary:", error);
-        throw new Error("Failed to generate the audio summary.");
-    }
+    // Audio generation is not implemented for Z.ai in this example
+    throw new Error("Audio summary generation is not implemented for Z.ai provider.");
 }
 
 export async function generateOpenRouterAudioSummary(summaryText: string, config: ApiConfig): Promise<Blob> {
-    if (!config.apiKey) {
-        throw new Error("OpenRouter API key is required for audio generation.");
-    }
-    if (!config.voiceModel) {
-        throw new Error("An OpenRouter voice model must be specified.");
-    }
-
-    try {
-        const response = await fetch("https://openrouter.ai/api/v1/audio/speech", {
-            method: "POST",
-            headers: {
-                "Authorization": `Bearer ${config.apiKey}`,
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-                model: config.voiceModel,
-                input: `Provide a professional, verbal summary of the following financial report analysis: ${summaryText}`
-            }),
-        });
-
-        if (!response.ok) {
-            const errorBody = await response.text();
-            throw new Error(`OpenRouter Audio API error (${response.status}): ${errorBody}`);
-        }
-
-        return await response.blob();
-
-    } catch (error) {
-        console.error("Error calling OpenRouter Audio API:", error);
-        throw new Error("Failed to generate audio summary via OpenRouter.");
-    }
+    // Audio generation is not implemented for Z.ai in this example
+    throw new Error("Audio summary generation is not implemented for Z.ai provider.");
 }
