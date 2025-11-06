@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import ModelConfig from './ModelConfig';
+import WorkflowSetup from './WorkflowSetup';
 
 type ApiProvider = 'gemini' | 'openrouter';
 
@@ -12,6 +13,7 @@ interface ApiConfigProps {
   onApiKeyChange: (apiKey: string) => void;
   onModelChange: (model: string) => void;
   onVoiceModelChange: (voiceModel: string) => void;
+  onWorkflowCreated?: (workflow: any, config: any) => void;
 }
 
 const ApiConfig: React.FC<ApiConfigProps> = ({
@@ -22,9 +24,11 @@ const ApiConfig: React.FC<ApiConfigProps> = ({
   onProviderChange,
   onApiKeyChange,
   onModelChange,
-  onVoiceModelChange
+  onVoiceModelChange,
+  onWorkflowCreated
 }) => {
   const [showModelConfig, setShowModelConfig] = useState(false);
+  const [showWorkflowSetup, setShowWorkflowSetup] = useState(false);
 
   const geminiModels = [
     { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', description: 'Fast & efficient for most tasks' },
@@ -53,7 +57,6 @@ const ApiConfig: React.FC<ApiConfigProps> = ({
   };
 
   const handleModelConfigSave = (config: any) => {
-    // Update the parent component with new config
     onProviderChange(config.provider);
     onApiKeyChange(config.apiKey);
     onModelChange(config.model);
@@ -62,20 +65,38 @@ const ApiConfig: React.FC<ApiConfigProps> = ({
     }
   };
 
+  const handleWorkflowCreated = (workflow: any, config: any) => {
+    if (onWorkflowCreated) {
+      onWorkflowCreated(workflow, config);
+    }
+    setShowWorkflowSetup(false);
+  };
+
   return (
     <>
       <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm mb-6">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-semibold text-gray-900">API Configuration</h2>
-          <button
-            onClick={() => setShowModelConfig(true)}
-            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm flex items-center gap-2"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-              <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            Advanced Configuration
-          </button>
+          <h2 className="text-xl font-semibold text-gray-900">AI Configuration</h2>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowWorkflowSetup(true)}
+              className="px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg hover:from-purple-700 hover:to-blue-700 text-sm flex items-center gap-2"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clipRule="evenodd" />
+              </svg>
+              🤖 CrewAI Workflow
+            </button>
+            <button
+              onClick={() => setShowModelConfig(true)}
+              className="px-4 py-2 bg-sky-600 text-white rounded-lg hover:bg-sky-700 text-sm flex items-center gap-2"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              Model Config
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -172,6 +193,14 @@ const ApiConfig: React.FC<ApiConfigProps> = ({
             <div>API Key: <span className="font-medium">{apiKey ? '••••••••' : 'Not set'}</span></div>
           </div>
         </div>
+
+        <div className="mt-4 p-3 bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg border border-purple-200">
+          <h4 className="text-sm font-semibold text-purple-800 mb-1">🤖 Advanced AI Workflows</h4>
+          <p className="text-xs text-purple-700">
+            Configure complex multi-agent workflows using natural language. Create specialized AI agents for different tasks, 
+            define dependencies, and automatically generate tools. Perfect for sophisticated financial analysis pipelines.
+          </p>
+        </div>
       </div>
 
       {showModelConfig && (
@@ -184,6 +213,19 @@ const ApiConfig: React.FC<ApiConfigProps> = ({
           }}
           onConfigChange={handleModelConfigSave}
           onClose={() => setShowModelConfig(false)}
+        />
+      )}
+
+      {showWorkflowSetup && (
+        <WorkflowSetup
+          apiConfig={{
+            provider,
+            apiKey,
+            model,
+            voiceModel
+          }}
+          onWorkflowCreated={handleWorkflowCreated}
+          onClose={() => setShowWorkflowSetup(false)}
         />
       )}
     </>
