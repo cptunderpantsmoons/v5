@@ -1,6 +1,4 @@
 import type { ReportData, VerificationResult, VerificationCheck, FinancialItem } from '../types';
-import { errorHandler, ErrorType, ErrorSeverity } from './errorHandler';
-import { logger } from '../utils/logger';
 
 const TOLERANCE = 1.0; // Allow for a $1 rounding difference
 
@@ -12,43 +10,8 @@ const sumItems = (items: FinancialItem[] | undefined): number => {
 };
 
 export const verifyReportData = (data: ReportData): VerificationResult => {
-  try {
-    logger.debug('Starting financial report verification', {
-      hasIncomeStatement: !!data.incomeStatement,
-      hasBalanceSheet: !!data.balanceSheet,
-      hasCashFlowStatement: !!data.cashFlowStatement
-    });
-
     const checks: VerificationCheck[] = [];
     const { incomeStatement, balanceSheet, cashFlowStatement } = data;
-
-    // Validate required data exists
-    if (!incomeStatement || !balanceSheet || !cashFlowStatement) {
-      const appError = errorHandler.handleError(
-        'Missing required financial statement data for verification',
-        ErrorType.VALIDATION,
-        ErrorSeverity.HIGH,
-        {
-          hasIncomeStatement: !!incomeStatement,
-          hasBalanceSheet: !!balanceSheet,
-          hasCashFlowStatement: !!cashFlowStatement
-        }
-      );
-      
-      return {
-        overallStatus: 'Failed',
-        checks: [{
-          name: 'Data Completeness Check',
-          principle: 'All financial statements must be present',
-          calculation: 'N/A',
-          reported: 'N/A',
-          discrepancy: 0,
-          passed: false,
-          notes: errorHandler.getUserMessage(appError)
-        }],
-        timestamp: new Date().toUTCString(),
-      };
-    }
 
     // 1. Balance Sheet Equation Check (Assets = Liabilities + Equity)
     const checkBalanceSheet = (year: '2025' | '2024') => {
@@ -58,14 +21,7 @@ export const verifyReportData = (data: ReportData): VerificationResult => {
         const totalEquity = balanceSheet?.totalEquity?.[yearSuffix];
 
         if (totalAssets === undefined || totalLiabilities === undefined || totalEquity === undefined) {
-            logger.warn('Missing total values for balance sheet verification', {
-              year,
-              hasTotalAssets: totalAssets !== undefined,
-              hasTotalLiabilities: totalLiabilities !== undefined,
-              hasTotalEquity: totalEquity !== undefined
-            });
-            
-            checks.push({
+             checks.push({
                 name: `Balance Sheet Equation (${year})`,
                 principle: 'Assets = Liabilities + Equity',
                 calculation: 'N/A',
@@ -100,13 +56,7 @@ export const verifyReportData = (data: ReportData): VerificationResult => {
         const netProfit = incomeStatement?.netProfit?.[yearSuffix];
         
         if (netProfit === undefined) {
-            logger.warn('Missing net profit for income statement verification', {
-              year,
-              totalRevenue,
-              totalExpenses
-            });
-            
-            checks.push({
+             checks.push({
                 name: `Income Statement Integrity (${year})`,
                 principle: 'Revenue - Expenses = Net Profit',
                 calculation: 'N/A',
@@ -129,7 +79,7 @@ export const verifyReportData = (data: ReportData): VerificationResult => {
             discrepancy,
             passed: Math.abs(discrepancy) <= TOLERANCE,
         });
-    };
+    }
     checkIncomeStatement('2025');
     checkIncomeStatement('2024');
 
@@ -142,14 +92,7 @@ export const verifyReportData = (data: ReportData): VerificationResult => {
         const netChangeInCash = cashFlowStatement?.netChangeInCash?.[yearSuffix];
 
         if (netChangeInCash === undefined) {
-            logger.warn('Missing net change in cash for cash flow verification', {
-              year,
-              operating,
-              investing,
-              financing
-            });
-            
-            checks.push({
+             checks.push({
                 name: `Cash Flow Integrity (${year})`,
                 principle: 'Operating + Investing + Financing = Net Change in Cash',
                 calculation: 'N/A',
@@ -172,9 +115,10 @@ export const verifyReportData = (data: ReportData): VerificationResult => {
             discrepancy,
             passed: Math.abs(discrepancy) <= TOLERANCE,
         });
-    };
+    }
     checkCashFlowStatement('2025');
     checkCashFlowStatement('2024');
+
 
     // Determine overall status
     const failedChecks = checks.filter(c => !c.passed).length;
@@ -186,48 +130,10 @@ export const verifyReportData = (data: ReportData): VerificationResult => {
         overallStatus = 'Passed with Warnings';
     }
 
-    const result: VerificationResult = {
+
+    return {
         overallStatus,
         checks,
         timestamp: new Date().toUTCString(),
     };
-
-    logger.info('Financial report verification completed', {
-      status: overallStatus,
-      totalChecks: checks.length,
-      passedChecks: checks.filter(c => c.passed).length,
-      failedChecks: failedChecks,
-      warningChecks: warningChecks
-    });
-
-    return result;
-  } catch (error) {
-    logger.error('Error during financial report verification', {
-      error: error instanceof Error ? error.message : 'Unknown error'
-    });
-    
-    const appError = errorHandler.handleError(
-      error instanceof Error ? error : new Error('Verification process failed'),
-      ErrorType.SYSTEM,
-      ErrorSeverity.HIGH,
-      { 
-        phase: 'verification',
-        originalError: error instanceof Error ? error.message : String(error)
-      }
-    );
-    
-    return {
-      overallStatus: 'Failed',
-      checks: [{
-        name: 'Verification Process Error',
-        principle: 'N/A',
-        calculation: 'N/A',
-        reported: 'N/A',
-        discrepancy: 0,
-        passed: false,
-        notes: errorHandler.getUserMessage(appError)
-      }],
-      timestamp: new Date().toUTCString(),
-    };
-  }
 };
