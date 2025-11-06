@@ -1,17 +1,23 @@
-import { GoogleGenAI, Type, Modality } from '@google/genai';
 import jsPDF from 'jspdf';
 import type { ReportData, VerificationResult } from '../types';
 
-// This tells TypeScript that a global variable `XLSX` will exist at runtime.
+// This tells TypeScript that a global variable will exist at runtime.
 // It is loaded via the script tag in index.html, not as a module.
-declare const XLSX: any;
+declare global {
+  var GoogleGenerativeAI: any;
+  var google: any;
+  var XLSX: any;
+}
 
+// API Configuration interface
 interface ApiConfig {
     provider: 'gemini' | 'openrouter';
     apiKey: string;
     model: string;
     voiceModel?: string;
 }
+
+export type { ApiConfig }; // Export the type for use in other files
 
 // Security: Environment-aware error handling
 const isDevelopment = process.env.NODE_ENV === 'development';
@@ -118,6 +124,67 @@ async function fileToGenerativePart(file: File): Promise<{ inlineData: { data: s
     } catch (error) {
         throw new Error(sanitizeError(error, 'fileToGenerativePart'));
     }
+}
+
+// Type definitions for the Google GenAI API
+const Type = {
+    OBJECT: 'object',
+    ARRAY: 'array',
+    STRING: 'string',
+    NUMBER: 'number',
+    BOOLEAN: 'boolean',
+    NULL: 'null'
+};
+
+const Modality = {
+    TEXT: 'text',
+    AUDIO: 'audio',
+    IMAGE: 'image',
+    VIDEO: 'video'
+};
+
+interface GenerationConfig {
+    responseMimeType?: string;
+    responseSchema?: any;
+    responseModalities?: string[];
+    speechConfig?: {
+        voiceConfig: {
+            prebuiltVoiceConfig: {
+                voiceName: string;
+            };
+        };
+    };
+}
+
+interface ContentPart {
+    text?: string;
+    inlineData?: {
+        data: string;
+        mimeType: string;
+    };
+}
+
+interface Content {
+    parts: ContentPart[];
+}
+
+interface GenerateContentResponse {
+    text: string;
+    candidates?: Array<{
+        content: {
+            parts: ContentPart[];
+        };
+    }>;
+}
+
+interface GoogleGenAI {
+    models: {
+        generateContent: (config: {
+            model: string;
+            contents: Content;
+            config?: GenerationConfig;
+        }) => Promise<GenerateContentResponse>;
+    };
 }
 
 const singleFinancialValueSchema = {
@@ -402,7 +469,9 @@ export async function generateFinancialReport(file2024: File, file2025: File, co
     if (!effectiveApiKey) {
         throw new Error("Authentication failed. Please check your API configuration.");
     }
-    const ai = new GoogleGenAI({ apiKey: effectiveApiKey });
+    
+    // Use the global GoogleGenerativeAI class
+    const ai = new GoogleGenerativeAI(effectiveApiKey);
     
     try {
         const part2024 = await fileToGenerativePart(file2024);
@@ -542,7 +611,7 @@ export async function fixFinancialReport(
     } else { // Gemini Provider
         const effectiveApiKey = config.apiKey || process.env.API_KEY as string;
         if (!effectiveApiKey) throw new Error("Authentication failed for correction request.");
-        const ai = new GoogleGenAI({ apiKey: effectiveApiKey });
+        const ai = new GoogleGenerativeAI(effectiveApiKey);
 
         try {
             const response = await ai.models.generateContent({
@@ -610,7 +679,7 @@ const createWavBlobFromPcm = (base64Pcm: string): Blob => {
 // Security: Environment-aware audio generation error handling
 export async function generateAudioSummary(summaryText: string): Promise<Blob> {
     try {
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+        const ai = new GoogleGenerativeAI(process.env.API_KEY as string);
         const response = await ai.models.generateContent({
             model: "gemini-2.5-flash-preview-tts",
             contents: { parts: [{ text: `Provide a professional, verbal summary of the following financial report analysis: ${summaryText}` }] },
