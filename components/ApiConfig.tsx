@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import ModelConfig from './ModelConfig';
-import WorkflowSetup from './WorkflowSetup';
+import WorkflowBuilder from './WorkflowBuilder';
+import type { Workflow } from '../services/crewaiWorkflow';
 
 type ApiProvider = 'gemini' | 'openrouter';
 
@@ -13,7 +14,7 @@ interface ApiConfigProps {
   onApiKeyChange: (apiKey: string) => void;
   onModelChange: (model: string) => void;
   onVoiceModelChange: (voiceModel: string) => void;
-  onWorkflowCreated?: (workflow: any, config: any) => void;
+  onWorkflowChange?: (workflow: Workflow) => void;
 }
 
 const ApiConfig: React.FC<ApiConfigProps> = ({
@@ -25,10 +26,11 @@ const ApiConfig: React.FC<ApiConfigProps> = ({
   onApiKeyChange,
   onModelChange,
   onVoiceModelChange,
-  onWorkflowCreated
+  onWorkflowChange
 }) => {
   const [showModelConfig, setShowModelConfig] = useState(false);
-  const [showWorkflowSetup, setShowWorkflowSetup] = useState(false);
+  const [showWorkflowBuilder, setShowWorkflowBuilder] = useState(false);
+  const [activeSubTab, setActiveSubTab] = useState<'basic' | 'advanced' | 'workflow'>('basic');
 
   const geminiModels = [
     { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', description: 'Fast & efficient for most tasks' },
@@ -65,126 +67,202 @@ const ApiConfig: React.FC<ApiConfigProps> = ({
     }
   };
 
-  const handleWorkflowCreated = (workflow: any, config: any) => {
-    if (onWorkflowCreated) {
-      onWorkflowCreated(workflow, config);
+  const handleWorkflowChange = (workflow: Workflow) => {
+    if (onWorkflowChange) {
+      onWorkflowChange(workflow);
     }
-    setShowWorkflowSetup(false);
   };
 
   return (
     <>
       <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm mb-6">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-semibold text-gray-900">AI Configuration</h2>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setShowWorkflowSetup(true)}
-              className="px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg hover:from-purple-700 hover:to-blue-700 text-sm flex items-center gap-2"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clipRule="evenodd" />
-              </svg>
-              🤖 CrewAI Workflow
-            </button>
+          <h2 className="text-xl font-semibold text-gray-900">🔧 AI Configuration & Workflow</h2>
+        </div>
+
+        {/* Sub Navigation */}
+        <div className="border-b border-gray-200 mb-6">
+          <nav className="flex space-x-8" aria-label="Sub tabs">
+            {[
+              { id: 'basic', name: 'Basic Settings' },
+              { id: 'advanced', name: 'Advanced Models' },
+              { id: 'workflow', name: 'CrewAI Workflow' }
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveSubTab(tab.id as any)}
+                className={`${
+                  activeSubTab === tab.id
+                    ? 'border-sky-600 text-sky-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-400'
+                } whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm transition-colors`}
+              >
+                {tab.name}
+              </button>
+            ))}
+          </nav>
+        </div>
+
+        {activeSubTab === 'basic' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                AI Provider
+              </label>
+              <select
+                value={provider}
+                onChange={(e) => onProviderChange(e.target.value as ApiProvider)}
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
+              >
+                <option value="gemini">Google Gemini (Free with API key)</option>
+                <option value="openrouter">OpenRouter (Multiple models, pay-per-use)</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                {provider === 'gemini' ? 'Gemini API Key' : 'OpenRouter API Key'}
+              </label>
+              <input
+                type="password"
+                value={apiKey}
+                onChange={(e) => onApiKeyChange(e.target.value)}
+                placeholder={provider === 'gemini' ? 'Enter Gemini API key' : 'Enter OpenRouter API key'}
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
+              />
+              {provider === 'gemini' && (
+                <p className="text-xs text-gray-500 mt-1">
+                  Get your API key from{' '}
+                  <a href="https://makersuite.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-sky-600 hover:underline">
+                    Google AI Studio
+                  </a>
+                </p>
+              )}
+              {provider === 'openrouter' && (
+                <p className="text-xs text-gray-500 mt-1">
+                  Get your API key from{' '}
+                  <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-sky-600 hover:underline">
+                    OpenRouter Dashboard
+                  </a>
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                {provider === 'gemini' ? 'Gemini Model' : 'OpenRouter Model'}
+              </label>
+              <select
+                value={model}
+                onChange={(e) => onModelChange(e.target.value)}
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
+              >
+                {getCurrentModels().map((modelOption) => (
+                  <option key={modelOption.id} value={modelOption.id}>
+                    {modelOption.name} - {modelOption.description}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Voice Model (for Audio Summary)
+              </label>
+              <select
+                value={voiceModel}
+                onChange={(e) => onVoiceModelChange(e.target.value)}
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
+                disabled={provider === 'gemini'}
+              >
+                {voiceModels.map((voiceModelOption) => (
+                  <option key={voiceModelOption.id} value={voiceModelOption.id}>
+                    {voiceModelOption.name} - {voiceModelOption.description}
+                  </option>
+                ))}
+              </select>
+              {provider === 'gemini' && (
+                <p className="text-xs text-gray-500 mt-1">
+                  Voice models only available with OpenRouter
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {activeSubTab === 'advanced' && (
+          <div className="space-y-4">
+            <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+              <h3 className="font-semibold text-purple-900 mb-2">🎛️ Advanced Model Configuration</h3>
+              <p className="text-sm text-purple-700">
+                Fine-tune model selection for each stage of the financial report generation process.
+              </p>
+            </div>
+            
             <button
               onClick={() => setShowModelConfig(true)}
-              className="px-4 py-2 bg-sky-600 text-white rounded-lg hover:bg-sky-700 text-sm flex items-center gap-2"
+              className="w-full px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center justify-center gap-2"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                 <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              Model Config
+              Configure Advanced Model Settings
             </button>
           </div>
-        </div>
+        )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              AI Provider
-            </label>
-            <select
-              value={provider}
-              onChange={(e) => onProviderChange(e.target.value as ApiProvider)}
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
-            >
-              <option value="gemini">Google Gemini (Free with API key)</option>
-              <option value="openrouter">OpenRouter (Multiple models, pay-per-use)</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              {provider === 'gemini' ? 'Gemini API Key' : 'OpenRouter API Key'}
-            </label>
-            <input
-              type="password"
-              value={apiKey}
-              onChange={(e) => onApiKeyChange(e.target.value)}
-              placeholder={provider === 'gemini' ? 'Enter Gemini API key' : 'Enter OpenRouter API key'}
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
-            />
-            {provider === 'gemini' && (
-              <p className="text-xs text-gray-500 mt-1">
-                Get your API key from{' '}
-                <a href="https://makersuite.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-sky-600 hover:underline">
-                  Google AI Studio
-                </a>
+        {activeSubTab === 'workflow' && (
+          <div className="space-y-4">
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+              <h3 className="font-semibold text-green-900 mb-2">🤖 CrewAI Workflow Builder</h3>
+              <p className="text-sm text-green-700">
+                Create custom AI agent workflows using natural language. Define agents, tasks, and execution logic.
               </p>
-            )}
-            {provider === 'openrouter' && (
-              <p className="text-xs text-gray-500 mt-1">
-                Get your API key from{' '}
-                <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-sky-600 hover:underline">
-                  OpenRouter Dashboard
-                </a>
-              </p>
-            )}
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              {provider === 'gemini' ? 'Gemini Model' : 'OpenRouter Model'}
-            </label>
-            <select
-              value={model}
-              onChange={(e) => onModelChange(e.target.value)}
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
+            </div>
+            
+            <button
+              onClick={() => setShowWorkflowBuilder(true)}
+              className="w-full px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center justify-center gap-2"
             >
-              {getCurrentModels().map((modelOption) => (
-                <option key={modelOption.id} value={modelOption.id}>
-                  {modelOption.name} - {modelOption.description}
-                </option>
-              ))}
-            </select>
-          </div>
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M3 4a1 1 0 011-1h4a1 1 0 010 2H6.414l2.293 2.293a1 1 0 01-1.414 1.414L5 6.414V8a1 1 0 01-2 0V4zM9 4a1 1 0 012 0v2.586l2.293-2.293a1 1 0 111.414 1.414L11.414 8H15a1 1 0 110 2h-4.586l2.293 2.293a1 1 0 11-1.414 1.414L9 9.414V16z" clipRule="evenodd" />
+              </svg>
+              Open Workflow Builder
+            </button>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Voice Model (for Audio Summary)
-            </label>
-            <select
-              value={voiceModel}
-              onChange={(e) => onVoiceModelChange(e.target.value)}
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
-              disabled={provider === 'gemini'}
-            >
-              {voiceModels.map((voiceModelOption) => (
-                <option key={voiceModelOption.id} value={voiceModelOption.id}>
-                  {voiceModelOption.name} - {voiceModelOption.description}
-                </option>
-              ))}
-            </select>
-            {provider === 'gemini' && (
-              <p className="text-xs text-gray-500 mt-1">
-                Voice models only available with OpenRouter
-              </p>
-            )}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+              <div className="bg-white p-4 rounded-lg border border-gray-200">
+                <h4 className="font-semibold text-gray-900 mb-2">✨ Natural Language Agents</h4>
+                <p className="text-sm text-gray-600">
+                  Describe agents in plain English: "Create an agent called 'Financial Analyst' that specializes in balance sheets using Claude"
+                </p>
+              </div>
+              
+              <div className="bg-white p-4 rounded-lg border border-gray-200">
+                <h4 className="font-semibold text-gray-900 mb-2">🔧 Automatic Tool Creation</h4>
+                <p className="text-sm text-gray-600">
+                  Agents automatically get tools based on their described capabilities and requirements.
+                </p>
+              </div>
+              
+              <div className="bg-white p-4 rounded-lg border border-gray-200">
+                <h4 className="font-semibold text-gray-900 mb-2">🔄 Flexible Workflows</h4>
+                <p className="text-sm text-gray-600">
+                  Create complex parallel or sequential workflows with task dependencies and error handling.
+                </p>
+              </div>
+              
+              <div className="bg-white p-4 rounded-lg border border-gray-200">
+                <h4 className="font-semibold text-gray-900 mb-2">🎯 Multi-Model Support</h4>
+                <p className="text-sm text-gray-600">
+                  Use different AI models for different agents - NVIDIA Nemotron, Claude, GPT-4, and more.
+                </p>
+              </div>
+            </div>
           </div>
-        </div>
+        )}
 
-        <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+        <div className="mt-6 p-3 bg-gray-50 rounded-lg">
           <h4 className="text-sm font-semibold text-gray-700 mb-2">Current Configuration:</h4>
           <div className="text-xs text-gray-600 space-y-1">
             <div>Provider: <span className="font-medium">{provider}</span></div>
@@ -192,14 +270,6 @@ const ApiConfig: React.FC<ApiConfigProps> = ({
             {voiceModel && <div>Voice Model: <span className="font-medium">{voiceModel}</span></div>}
             <div>API Key: <span className="font-medium">{apiKey ? '••••••••' : 'Not set'}</span></div>
           </div>
-        </div>
-
-        <div className="mt-4 p-3 bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg border border-purple-200">
-          <h4 className="text-sm font-semibold text-purple-800 mb-1">🤖 Advanced AI Workflows</h4>
-          <p className="text-xs text-purple-700">
-            Configure complex multi-agent workflows using natural language. Create specialized AI agents for different tasks, 
-            define dependencies, and automatically generate tools. Perfect for sophisticated financial analysis pipelines.
-          </p>
         </div>
       </div>
 
@@ -216,16 +286,10 @@ const ApiConfig: React.FC<ApiConfigProps> = ({
         />
       )}
 
-      {showWorkflowSetup && (
-        <WorkflowSetup
-          apiConfig={{
-            provider,
-            apiKey,
-            model,
-            voiceModel
-          }}
-          onWorkflowCreated={handleWorkflowCreated}
-          onClose={() => setShowWorkflowSetup(false)}
+      {showWorkflowBuilder && (
+        <WorkflowBuilder
+          onWorkflowChange={handleWorkflowChange}
+          onClose={() => setShowWorkflowBuilder(false)}
         />
       )}
     </>
