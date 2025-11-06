@@ -9,6 +9,16 @@ const sumItems = (items: FinancialItem[] | undefined): number => {
     return items.reduce((acc, item) => acc + item.amount2025, 0);
 };
 
+// Security: Environment-aware error logging
+const isDevelopment = process.env.NODE_ENV === 'development';
+
+const logVerificationError = (message: string, context: string) => {
+    if (isDevelopment) {
+        console.error(`[Verification] ${context}: ${message}`);
+    }
+    // In production, we could send to a secure logging service here
+};
+
 export const verifyReportData = (data: ReportData): VerificationResult => {
     const checks: VerificationCheck[] = [];
     const { incomeStatement, balanceSheet, cashFlowStatement } = data;
@@ -21,20 +31,29 @@ export const verifyReportData = (data: ReportData): VerificationResult => {
         const totalEquity = balanceSheet?.totalEquity?.[yearSuffix];
 
         if (totalAssets === undefined || totalLiabilities === undefined || totalEquity === undefined) {
-             checks.push({
+            const errorMsg = `Missing balance sheet totals for ${year}`;
+            logVerificationError(errorMsg, 'Balance Sheet Check');
+            
+            checks.push({
                 name: `Balance Sheet Equation (${year})`,
                 principle: 'Assets = Liabilities + Equity',
                 calculation: 'N/A',
                 reported: 'N/A',
                 discrepancy: 0,
                 passed: false,
-                notes: 'Verification skipped due to missing total values in the report data.'
+                notes: 'Verification skipped due to missing data'
             });
             return;
         }
 
         const calculatedAssets = totalLiabilities + totalEquity;
         const discrepancy = totalAssets - calculatedAssets;
+
+        // Log detailed info only in development
+        if (Math.abs(discrepancy) > TOLERANCE) {
+            const errorMsg = `Balance sheet imbalance for ${year}: Assets=${formatCurrency(totalAssets)}, Liabilities+Equity=${formatCurrency(calculatedAssets)}, Discrepancy=${formatCurrency(discrepancy)}`;
+            logVerificationError(errorMsg, 'Balance Sheet Check');
+        }
 
         checks.push({
             name: `Balance Sheet Equation (${year})`,
@@ -56,20 +75,29 @@ export const verifyReportData = (data: ReportData): VerificationResult => {
         const netProfit = incomeStatement?.netProfit?.[yearSuffix];
         
         if (netProfit === undefined) {
-             checks.push({
+            const errorMsg = `Missing net profit for ${year}`;
+            logVerificationError(errorMsg, 'Income Statement Check');
+            
+            checks.push({
                 name: `Income Statement Integrity (${year})`,
                 principle: 'Revenue - Expenses = Net Profit',
                 calculation: 'N/A',
                 reported: 'N/A',
                 discrepancy: 0,
                 passed: false,
-                notes: 'Verification skipped due to missing Net Profit value.'
+                notes: 'Verification skipped due to missing net profit data'
             });
             return;
         }
 
         const calculatedNetProfit = totalRevenue - totalExpenses;
         const discrepancy = netProfit - calculatedNetProfit;
+
+        // Log detailed info only in development
+        if (Math.abs(discrepancy) > TOLERANCE) {
+            const errorMsg = `Income statement calculation error for ${year}: Revenue=${formatCurrency(totalRevenue)}, Expenses=${formatCurrency(totalExpenses)}, Expected=${formatCurrency(calculatedNetProfit)}, Reported=${formatCurrency(netProfit)}`;
+            logVerificationError(errorMsg, 'Income Statement Check');
+        }
 
         checks.push({
             name: `Income Statement Integrity (${year})`,
@@ -92,20 +120,29 @@ export const verifyReportData = (data: ReportData): VerificationResult => {
         const netChangeInCash = cashFlowStatement?.netChangeInCash?.[yearSuffix];
 
         if (netChangeInCash === undefined) {
-             checks.push({
+            const errorMsg = `Missing net change in cash for ${year}`;
+            logVerificationError(errorMsg, 'Cash Flow Check');
+            
+            checks.push({
                 name: `Cash Flow Integrity (${year})`,
                 principle: 'Operating + Investing + Financing = Net Change in Cash',
                 calculation: 'N/A',
                 reported: 'N/A',
                 discrepancy: 0,
                 passed: false,
-                notes: 'Verification skipped due to missing Net Change in Cash value.'
+                notes: 'Verification skipped due to missing cash flow data'
             });
             return;
         }
 
         const calculatedNetChange = operating + investing + financing;
         const discrepancy = netChangeInCash - calculatedNetChange;
+        
+        // Log detailed info only in development
+        if (Math.abs(discrepancy) > TOLERANCE) {
+            const errorMsg = `Cash flow calculation error for ${year}: Operating=${formatCurrency(operating)}, Investing=${formatCurrency(investing)}, Financing=${formatCurrency(financing)}, Expected=${formatCurrency(calculatedNetChange)}, Reported=${formatCurrency(netChangeInCash)}`;
+            logVerificationError(errorMsg, 'Cash Flow Check');
+        }
         
         checks.push({
             name: `Cash Flow Integrity (${year})`,
@@ -119,7 +156,6 @@ export const verifyReportData = (data: ReportData): VerificationResult => {
     checkCashFlowStatement('2025');
     checkCashFlowStatement('2024');
 
-
     // Determine overall status
     const failedChecks = checks.filter(c => !c.passed).length;
     const warningChecks = checks.filter(c => c.notes && !c.passed).length; // Checks that failed due to missing data
@@ -130,6 +166,10 @@ export const verifyReportData = (data: ReportData): VerificationResult => {
         overallStatus = 'Passed with Warnings';
     }
 
+    // Log overall verification result
+    if (isDevelopment) {
+        console.log(`[Verification] Overall status: ${overallStatus}, Failed checks: ${failedChecks}, Warning checks: ${warningChecks}`);
+    }
 
     return {
         overallStatus,

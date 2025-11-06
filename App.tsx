@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import type { ReportData, VerificationResult } from './types';
 import { generateFinancialReport, fixFinancialReport } from './services/geminiService';
@@ -9,6 +8,26 @@ import FileUpload from './components/FileUpload';
 import ApiConfig from './components/ApiConfig';
 
 type ApiProvider = 'gemini' | 'openrouter';
+
+// Security: Environment-aware error handling
+const isDevelopment = process.env.NODE_ENV === 'development';
+
+const sanitizeErrorForUser = (error: unknown): string => {
+    // In production, return generic error messages
+    if (!isDevelopment) {
+        return "An error occurred while processing your request. Please try again.";
+    }
+    
+    // In development, provide more details for debugging
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error('[App] Development error:', {
+        message: errorMessage,
+        timestamp: new Date().toISOString(),
+        stack: error instanceof Error ? error.stack : undefined
+    });
+    
+    return `Development error: ${errorMessage}`;
+};
 
 const App: React.FC = () => {
   const [reportData, setReportData] = useState<ReportData | null>(null);
@@ -40,7 +59,11 @@ const App: React.FC = () => {
             setVerificationResult(JSON.parse(savedVerification));
             setCompanyName(savedCompanyName);
         } catch (e) {
-            console.error("Failed to parse saved report data from localStorage", e);
+            // Sanitize error logging - only show generic message to user
+            if (isDevelopment) {
+                console.error('[App] Failed to parse saved report data from localStorage', e);
+            }
+            
             // Clear potentially corrupted data
             localStorage.removeItem('financialReportData');
             localStorage.removeItem('financialVerificationResult');
@@ -48,7 +71,6 @@ const App: React.FC = () => {
         }
     }
   }, []); // Empty array ensures this runs only once on mount
-
 
   const handleGenerateReport = async () => {
     if (!file2024 || !file2025 || !companyName) {
@@ -88,11 +110,13 @@ const App: React.FC = () => {
         while (!isGenerationCancelledRef.current && currentVerification.overallStatus === 'Failed') {
             attempt++;
             if (attempt > 5) { // Safety break to prevent infinite loops
-                throw new Error("Failed to correct the report after 5 attempts. Please try again or use different source documents.");
+                throw new Error("Failed to correct the report after multiple attempts. Please try again or use different source documents.");
             }
             setRetryAttempt(attempt);
 
-            console.log(`Verification failed on attempt ${attempt - 1}. Attempting correction...`);
+            if (isDevelopment) {
+                console.log(`Verification failed on attempt ${attempt - 1}. Attempting correction...`);
+            }
             
             // Pass the failed report and verification result to the fix function
             currentReportData = await fixFinancialReport(currentReportData, currentVerification, apiConfig);
@@ -116,7 +140,10 @@ const App: React.FC = () => {
                 localStorage.setItem('financialVerificationResult', JSON.stringify(currentVerification));
                 localStorage.setItem('financialCompanyName', companyName);
             } catch (e) {
-                console.error("Failed to save report data to localStorage", e);
+                // Sanitize error logging - only log in development
+                if (isDevelopment) {
+                    console.error('[App] Failed to save report data to localStorage', e);
+                }
                 // This is a non-critical error, so we don't show it to the user.
             }
 
@@ -126,9 +153,14 @@ const App: React.FC = () => {
 
     } catch (err) {
         if (!isGenerationCancelledRef.current) {
-            const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
-            setError(`Failed to generate report. ${errorMessage}`);
-            console.error(err);
+            // Sanitize error for user display
+            const sanitizedError = sanitizeErrorForUser(err);
+            setError(sanitizedError);
+            
+            // Log detailed error info only in development
+            if (isDevelopment) {
+                console.error('[App] Report generation error:', err);
+            }
         } else {
              setError("Report generation was cancelled by the user.");
         }

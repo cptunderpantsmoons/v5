@@ -23,6 +23,26 @@ interface ReportDisplayProps {
   companyName: string;
 }
 
+// Security: Environment-aware error handling
+const isDevelopment = process.env.NODE_ENV === 'development';
+
+const sanitizeErrorForUser = (error: unknown, context: string): string => {
+    // In production, return generic error messages
+    if (!isDevelopment) {
+        return "An error occurred while processing your request. Please try again.";
+    }
+    
+    // In development, provide more details for debugging
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[${context}] Development error:`, {
+        message: errorMessage,
+        timestamp: new Date().toISOString(),
+        stack: error instanceof Error ? error.stack : undefined
+    });
+    
+    return `Development error in ${context}: ${errorMessage}`;
+};
+
 const SummaryRow: React.FC<{ title: string; values: any; isEditing: boolean }> = ({ title, values, isEditing }) => {
     if (!values) return null;
     const formatCurrency = (value: number) => new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
@@ -99,6 +119,9 @@ const ReportDisplay: React.FC<ReportDisplayProps> = ({ data, verification, onRes
 
             // Restore editing state
             if (wasEditing) setIsEditing(true);
+        }).catch((error) => {
+            // Sanitize error logging
+            console.error('PDF generation error:', sanitizeErrorForUser(error, 'PDF Generation'));
         });
     }, 100);
   };
@@ -110,7 +133,10 @@ const ReportDisplay: React.FC<ReportDisplayProps> = ({ data, verification, onRes
       await new Promise(resolve => setTimeout(resolve, 50));
       generateAASBPdf(data, companyName);
     } catch (e) {
-      console.error("Failed to generate AASB PDF", e);
+      // Sanitize error logging
+      if (isDevelopment) {
+        console.error('AASB PDF generation error:', e);
+      }
       // You could set an error state here to show a message to the user
     } finally {
       setIsGeneratingAASBPdf(false);
@@ -141,7 +167,8 @@ const ReportDisplay: React.FC<ReportDisplayProps> = ({ data, verification, onRes
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
     } catch (error) {
-        const message = error instanceof Error ? error.message : "An unknown error occurred.";
+        // Sanitize error for user display
+        const message = sanitizeErrorForUser(error, 'Audio Generation');
         setAudioError(message);
     } finally {
         setIsGeneratingAudio(false);
@@ -220,7 +247,7 @@ const ReportDisplay: React.FC<ReportDisplayProps> = ({ data, verification, onRes
                 )}
             </div>
         </div>
-        {audioError && <div className="text-center mb-4 bg-red-100 border border-red-300 p-3 rounded-lg text-red-600 text-sm">{`Audio Error: ${audioError}`}</div>}
+        {audioError && <div className="text-center mb-4 bg-red-100 border border-red-300 p-3 rounded-lg text-red-600 text-sm">{audioError}</div>}
 
         {/* Tabs */}
         <div className="border-b border-gray-300 mb-6">

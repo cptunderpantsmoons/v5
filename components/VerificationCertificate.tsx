@@ -7,6 +7,18 @@ interface VerificationCertificateProps {
   certificate: VerificationResult;
 }
 
+// Security: Environment-aware error handling
+const isDevelopment = process.env.NODE_ENV === 'development';
+
+const handlePdfGenerationError = (error: unknown) => {
+    // Sanitize error logging - only show generic message to user
+    if (isDevelopment) {
+        console.error('[VerificationCertificate] PDF generation error:', error);
+    }
+    // In production, we could show a user-friendly notification here
+    // For now, we just silently fail to prevent information disclosure
+};
+
 const VerificationCheckRow: React.FC<{ check: VerificationCheck }> = ({ check }) => {
     const statusText = check.passed ? 'text-green-700' : 'text-red-700';
     const statusBg = check.passed ? 'bg-green-100' : 'bg-red-100';
@@ -56,7 +68,6 @@ const VerificationCheckRow: React.FC<{ check: VerificationCheck }> = ({ check })
     );
 };
 
-
 const VerificationCertificate: React.FC<VerificationCertificateProps> = ({ certificate }) => {
   const certificateRef = useRef<HTMLDivElement>(null);
 
@@ -77,6 +88,8 @@ const VerificationCertificate: React.FC<VerificationCertificateProps> = ({ certi
         });
         pdf.addImage(imgData, 'JPEG', 0, 0, canvas.width, canvas.height);
         pdf.save('financial-verification-certificate.pdf');
+    }).catch((error) => {
+        handlePdfGenerationError(error);
     });
   };
 

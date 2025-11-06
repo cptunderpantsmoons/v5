@@ -13,80 +13,111 @@ interface ApiConfig {
     voiceModel?: string;
 }
 
-// Helper function to convert a File object to a GoogleGenerativeAI.Part object.
+// Security: Environment-aware error handling
+const isDevelopment = process.env.NODE_ENV === 'development';
+
+const sanitizeError = (error: unknown, context: string): string => {
+    // In production, return generic error messages
+    if (!isDevelopment) {
+        return "An error occurred while processing your request. Please try again.";
+    }
+    
+    // In development, provide helpful details but avoid sensitive information
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    
+    // Only log technical details in development
+    console.error(`[${context}] Error details:`, {
+        message: errorMessage,
+        context,
+        timestamp: new Date().toISOString()
+    });
+    
+    return `Development error in ${context}: ${errorMessage}`;
+};
+
+// Security: Sanitized file processing with environment-aware error handling
 async function fileToGenerativePart(file: File): Promise<{ inlineData: { data: string; mimeType: string; }; }> {
     const excelMimeTypes = [
         'application/vnd.ms-excel',
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     ];
 
-    if (excelMimeTypes.includes(file.type)) {
-        // Per user instruction: convert Excel file to a PDF first.
-        const arrayBuffer = await file.arrayBuffer();
-        const workbook = XLSX.read(arrayBuffer);
+    try {
+        if (excelMimeTypes.includes(file.type)) {
+            // Per user instruction: convert Excel file to a PDF first.
+            const arrayBuffer = await file.arrayBuffer();
+            const workbook = XLSX.read(arrayBuffer);
 
-        const pdf = new jsPDF();
-        pdf.setFont('courier', 'normal'); // Use a monospaced font for table-like alignment
-        pdf.setFontSize(8);
+            const pdf = new jsPDF();
+            pdf.setFont('courier', 'normal'); // Use a monospaced font for table-like alignment
+            pdf.setFontSize(8);
 
-        const pageHeight = pdf.internal.pageSize.height;
-        const margin = 10;
-        let yPosition = margin;
+            const pageHeight = pdf.internal.pageSize.height;
+            const margin = 10;
+            let yPosition = margin;
 
-        workbook.SheetNames.forEach((sheetName, index) => {
-            if (index > 0) {
-                pdf.addPage();
-            }
-            yPosition = margin;
-            
-            pdf.text(`Sheet: ${sheetName}`, margin, yPosition);
-            yPosition += 10;
-
-            const worksheet = workbook.Sheets[sheetName];
-            // Convert sheet to an array of arrays for easier processing
-            const data: string[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-
-            data.forEach(row => {
-                // Check if new line exceeds page height
-                if (yPosition > pageHeight - margin) {
+            workbook.SheetNames.forEach((sheetName, index) => {
+                if (index > 0) {
                     pdf.addPage();
-                    yPosition = margin;
                 }
-                const rowText = row.map(cell => cell !== null && cell !== undefined ? cell : '').join(' | ');
-                pdf.text(rowText, margin, yPosition);
-                yPosition += 5; // Move to the next line
-            });
-        });
-        
-        // Output the generated PDF as a base64 string
-        const pdfDataUri = pdf.output('datauristring');
-        const base64Data = pdfDataUri.split(',')[1];
-        
-        return {
-            inlineData: {
-                data: base64Data,
-                mimeType: 'application/pdf', // Send the converted file as a PDF
-            },
-        };
-    }
+                yPosition = margin;
+                
+                pdf.text(`Sheet: ${sheetName}`, margin, yPosition);
+                yPosition += 10;
 
-    // For other file types (PDF, images), process as before.
-    const base64EncodedDataPromise = new Promise<string>((resolve) => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        // The result includes the Base64 prefix, which we need to remove.
-        const base64Data = (reader.result as string).split(',')[1];
-        resolve(base64Data);
-      };
-      reader.readAsDataURL(file);
-    });
-  
-    return {
-      inlineData: {
-        data: await base64EncodedDataPromise,
-        mimeType: file.type,
-      },
-    };
+                const worksheet = workbook.Sheets[sheetName];
+                // Convert sheet to an array of arrays for easier processing
+                const data: string[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+                data.forEach(row => {
+                    // Check if new line exceeds page height
+                    if (yPosition > pageHeight - margin) {
+                        pdf.addPage();
+                        yPosition = margin;
+                    }
+                    const rowText = row.map(cell => cell !== null && cell !== undefined ? cell : '').join(' | ');
+                    pdf.text(rowText, margin, yPosition);
+                    yPosition += 5; // Move to the next line
+                });
+            });
+            
+            // Output the generated PDF as a base64 string
+            const pdfDataUri = pdf.output('datauristring');
+            const base64Data = pdfDataUri.split(',')[1];
+            
+            return {
+                inlineData: {
+                    data: base64Data,
+                    mimeType: 'application/pdf', // Send the converted file as a PDF
+                },
+            };
+        }
+
+        // For other file types (PDF, images), process as before.
+        const base64EncodedDataPromise = new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            try {
+                // The result includes the Base64 prefix, which we need to remove.
+                const base64Data = (reader.result as string).split(',')[1];
+                resolve(base64Data);
+            } catch (e) {
+                reject(new Error('Failed to process file data'));
+            }
+          };
+          reader.onerror = () => reject(new Error('Failed to read file'));
+          reader.readAsDataURL(file);
+        });
+      
+        return {
+          inlineData: {
+            data: await base64EncodedDataPromise,
+            mimeType: file.type,
+          },
+        };
+    } catch (error) {
+        throw new Error(sanitizeError(error, 'fileToGenerativePart'));
+    }
 }
 
 const singleFinancialValueSchema = {
@@ -282,6 +313,7 @@ const responseSchema = {
     required: ['summary', 'kpis', 'abn', 'directorsDeclaration', 'incomeStatement', 'balanceSheet', 'cashFlowStatement', 'notesToFinancialStatements'],
 };
 
+// Security: Environment-aware API error handling
 export async function generateFinancialReport(file2024: File, file2025: File, config: ApiConfig): Promise<ReportData> {
   const prompt = KNOWLEDGE_BASE + getBasePrompt();
 
@@ -354,8 +386,7 @@ export async function generateFinancialReport(file2024: File, file2025: File, co
         });
 
         if (!apiResponse.ok) {
-            const errorBody = await apiResponse.text();
-            throw new Error(`OpenRouter API error (${apiResponse.status}): ${errorBody}`);
+            throw new Error(`API request failed with status ${apiResponse.status}`);
         }
 
         const responseData = await apiResponse.json();
@@ -363,14 +394,13 @@ export async function generateFinancialReport(file2024: File, file2025: File, co
         return JSON.parse(jsonText) as ReportData;
 
     } catch (error) {
-        console.error("Error calling OpenRouter API:", error);
-        throw new Error("The AI model failed to process the financial data via OpenRouter. Please check your API key, model selection, and that you are using image files.");
+        throw new Error(sanitizeError(error, 'OpenRouter API call'));
     }
 
   } else { // Gemini Provider
     const effectiveApiKey = config.apiKey || process.env.API_KEY as string;
     if (!effectiveApiKey) {
-        throw new Error("Gemini API key is missing. Please provide one in the config or set the environment variable.");
+        throw new Error("Authentication failed. Please check your API configuration.");
     }
     const ai = new GoogleGenAI({ apiKey: effectiveApiKey });
     
@@ -394,8 +424,7 @@ export async function generateFinancialReport(file2024: File, file2025: File, co
         const parsedData = JSON.parse(jsonText) as ReportData;
         return parsedData;
     } catch (error) {
-        console.error("Error calling Gemini API:", error);
-        throw new Error("The AI model failed to process the financial data. Please check if the uploaded documents are clear and valid financial reports.");
+        throw new Error(sanitizeError(error, 'Gemini API call'));
     }
   }
 }
@@ -500,8 +529,7 @@ export async function fixFinancialReport(
             });
 
             if (!apiResponse.ok) {
-                const errorBody = await apiResponse.text();
-                throw new Error(`OpenRouter API error during correction (${apiResponse.status}): ${errorBody}`);
+                throw new Error(`Correction API request failed with status ${apiResponse.status}`);
             }
 
             const responseData = await apiResponse.json();
@@ -509,12 +537,11 @@ export async function fixFinancialReport(
             return JSON.parse(jsonText) as ReportData;
 
         } catch (error) {
-            console.error("Error calling OpenRouter API for correction:", error);
-            throw new Error("The AI model failed to correct the financial data via OpenRouter.");
+            throw new Error(sanitizeError(error, 'OpenRouter correction API'));
         }
     } else { // Gemini Provider
         const effectiveApiKey = config.apiKey || process.env.API_KEY as string;
-        if (!effectiveApiKey) throw new Error("Gemini API key is missing.");
+        if (!effectiveApiKey) throw new Error("Authentication failed for correction request.");
         const ai = new GoogleGenAI({ apiKey: effectiveApiKey });
 
         try {
@@ -529,12 +556,10 @@ export async function fixFinancialReport(
             const jsonText = response.text.trim();
             return JSON.parse(jsonText) as ReportData;
         } catch (error) {
-            console.error("Error calling Gemini API for correction:", error);
-            throw new Error("The AI model failed to correct the financial data.");
+            throw new Error(sanitizeError(error, 'Gemini correction API'));
         }
     }
 }
-
 
 const createWavBlobFromPcm = (base64Pcm: string): Blob => {
     const decodeBase64 = (base64: string) => {
@@ -582,10 +607,10 @@ const createWavBlobFromPcm = (base64Pcm: string): Blob => {
     return new Blob([view], { type: 'audio/wav' });
 };
 
-
+// Security: Environment-aware audio generation error handling
 export async function generateAudioSummary(summaryText: string): Promise<Blob> {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
     try {
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
         const response = await ai.models.generateContent({
             model: "gemini-2.5-flash-preview-tts",
             contents: [{ parts: [{ text: `Provide a professional, verbal summary of the following financial report analysis: ${summaryText}` }] }],
@@ -601,21 +626,20 @@ export async function generateAudioSummary(summaryText: string): Promise<Blob> {
 
         const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
         if (!base64Audio) {
-            throw new Error("No audio data was returned from the API.");
+            throw new Error("Audio generation returned no data");
         }
         return createWavBlobFromPcm(base64Audio);
     } catch (error) {
-        console.error("Error generating audio summary:", error);
-        throw new Error("Failed to generate the audio summary.");
+        throw new Error(sanitizeError(error, 'audio summary generation'));
     }
 }
 
 export async function generateOpenRouterAudioSummary(summaryText: string, config: ApiConfig): Promise<Blob> {
     if (!config.apiKey) {
-        throw new Error("OpenRouter API key is required for audio generation.");
+        throw new Error("Authentication required for audio generation");
     }
     if (!config.voiceModel) {
-        throw new Error("An OpenRouter voice model must be specified.");
+        throw new Error("Voice model configuration is required");
     }
 
     try {
@@ -632,14 +656,12 @@ export async function generateOpenRouterAudioSummary(summaryText: string, config
         });
 
         if (!response.ok) {
-            const errorBody = await response.text();
-            throw new Error(`OpenRouter Audio API error (${response.status}): ${errorBody}`);
+            throw new Error(`Audio generation failed with status ${response.status}`);
         }
 
         return await response.blob();
 
     } catch (error) {
-        console.error("Error calling OpenRouter Audio API:", error);
-        throw new Error("Failed to generate audio summary via OpenRouter.");
+        throw new Error(sanitizeError(error, 'OpenRouter audio generation'));
     }
 }
