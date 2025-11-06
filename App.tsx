@@ -57,7 +57,7 @@ const App: React.FC = () => {
   useEffect(() => {
     const savedReport = localStorage.getItem('financialReportData');
     const savedVerification = localStorage.getItem('financialVerificationResult');
-    const savedCompanyName = localLocalStorage.getItem('financialCompanyName');
+    const savedCompanyName = localStorage.getItem('financialCompanyName'); // Fixed: removed extra 'local'
     const savedWorkflow = localStorage.getItem('crewaiWorkflow');
 
     if (savedReport && savedVerification && savedCompanyName) {

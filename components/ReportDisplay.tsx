@@ -1,378 +1,199 @@
-import React, { useRef, useState } from 'react';
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
+import React, { useState, useRef } from 'react';
 import type { ReportData, VerificationResult } from '../types';
 import { generateAudioSummary, generateOpenRouterAudioSummary } from '../services/geminiService';
 import { generateAASBPdf } from '../services/pdfGenerator';
-import KPICard from './KPICard';
-import ComparisonChart from './ComparisonChart';
-import ComparisonTable from './ComparisonTable';
-import VerificationCertificate from './VerificationCertificate';
-import AASBPreview from './AASBPreview';
 
 interface ReportDisplayProps {
   data: ReportData;
   verification: VerificationResult;
   onReset: () => void;
   apiConfig: {
-      provider: 'gemini' | 'openrouter';
-      apiKey: string;
-      model: string;
-      voiceModel?: string;
+    provider: 'gemini' | 'openrouter';
+    apiKey: string;
+    model: string;
+    voiceModel: string;
   };
   companyName: string;
 }
 
-// Security: Environment-aware error handling
-const isDevelopment = process.env.NODE_ENV === 'development';
-
-const sanitizeErrorForUser = (error: unknown, context: string): string => {
-    // In production, return generic error messages
-    if (!isDevelopment) {
-        return "An error occurred while processing your request. Please try again.";
-    }
-    
-    // In development, provide more details for debugging
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error(`[${context}] Development error:`, {
-        message: errorMessage,
-        timestamp: new Date().toISOString(),
-        stack: error instanceof Error ? error.stack : undefined
-    });
-    
-    return `Development error in ${context}: ${errorMessage}`;
-};
-
-const SummaryRow: React.FC<{ title: string; values: any; isEditing: boolean }> = ({ title, values, isEditing }) => {
-    if (!values) return null;
-    const formatCurrency = (value: number) => new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
-    const editableClass = isEditing ? 'p-1 rounded outline-dashed outline-1 outline-sky-500' : '';
-    return (
-      <div className="bg-gray-50 rounded-b-lg">
-        <table className="w-full text-sm">
-          <tbody>
-            <tr className="font-bold">
-              <th scope="row" className="px-6 py-3 text-left font-semibold text-gray-800 whitespace-nowrap">
-                <span contentEditable={isEditing} suppressContentEditableWarning={true} className={editableClass}>
-                    {title}
-                </span>
-                {values.noteRef && (
-                  <a href={`#note-${values.noteRef}`} className="ml-2 text-gray-500 hover:text-sky-600 no-underline" title={`Reference to Note ${values.noteRef}`}>
-                    <sup className="text-xs font-mono py-0.5 px-1.5 rounded-sm bg-gray-200">({values.noteRef})</sup>
-                  </a>
-                )}
-              </th>
-              <td 
-                contentEditable={isEditing}
-                suppressContentEditableWarning={true}
-                className={`px-6 py-3 text-right font-mono ${values.amount2025 < 0 ? 'text-red-600' : 'text-gray-900'} ${editableClass}`}
-              >
-                {formatCurrency(values.amount2025)}
-              </td>
-              <td 
-                contentEditable={isEditing}
-                suppressContentEditableWarning={true}
-                className={`px-6 py-3 text-right font-mono ${values.amount2024 < 0 ? 'text-red-600' : 'text-gray-600'} ${editableClass}`}
-              >
-                {formatCurrency(values.amount2024)}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    );
-};
-
 const ReportDisplay: React.FC<ReportDisplayProps> = ({ data, verification, onReset, apiConfig, companyName }) => {
-  const reportRef = useRef<HTMLDivElement>(null);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [isGeneratingAudio, setIsGeneratingAudio] = useState(false);
-  const [isGeneratingAASBPdf, setIsGeneratingAASBPdf] = useState(false);
-  const [audioError, setAudioError] = useState<string | null>(null);
-  const [isEditing, setIsEditing] = useState(false);
-  const [activeTab, setActiveTab] = useState<'report' | 'verification' | 'aasb'>('report');
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const audioRef = useRef<HTMLAudioElement>(null);
 
-  const { incomeStatement, balanceSheet, cashFlowStatement } = data;
-
-  const handleDownloadViewPdf = () => {
-    const input = reportRef.current;
-    if (!input) return;
-
-    // Temporarily set editing to false to hide outlines during PDF generation
-    const wasEditing = isEditing;
-    if (wasEditing) setIsEditing(false);
-
-    // Allow state to update before capturing
-    setTimeout(() => {
-        html2canvas(input, { 
-            useCORS: true,
-            scale: 1.5,
-            backgroundColor: '#ffffff'
-        }).then((canvas) => {
-            const imgData = canvas.toDataURL('image/jpeg', 0.85);
-            const pdf = new jsPDF({
-                orientation: 'p',
-                unit: 'px',
-                format: [canvas.width, canvas.height]
-            });
-            pdf.addImage(imgData, 'JPEG', 0, 0, canvas.width, canvas.height);
-            pdf.save('financial-report-view.pdf');
-
-            // Restore editing state
-            if (wasEditing) setIsEditing(true);
-        }).catch((error) => {
-            // Sanitize error logging
-            console.error('PDF generation error:', sanitizeErrorForUser(error, 'PDF Generation'));
-        });
-    }, 100);
-  };
-
-  const handleDownloadAASBPdf = async () => {
-    setIsGeneratingAASBPdf(true);
-    try {
-      // Use a timeout to allow the UI to update to the loading state before the blocking PDF generation begins
-      await new Promise(resolve => setTimeout(resolve, 50));
-      generateAASBPdf(data, companyName);
-    } catch (e) {
-      // Sanitize error logging
-      if (isDevelopment) {
-        console.error('AASB PDF generation error:', e);
-      }
-      // You could set an error state here to show a message to the user
-    } finally {
-      setIsGeneratingAASBPdf(false);
-    }
-  };
-
-  const handleDownloadAudio = async () => {
+  const handleGenerateAudio = async () => {
     setIsGeneratingAudio(true);
-    setAudioError(null);
     try {
-        let audioBlob: Blob;
-        let fileExtension = 'wav';
-        if (apiConfig.provider === 'openrouter') {
-            audioBlob = await generateOpenRouterAudioSummary(data.summary, apiConfig);
-            // Infer extension from blob type or default
-            fileExtension = audioBlob.type.split('/')[1] || 'mp3';
-        } else {
-            audioBlob = await generateAudioSummary(data.summary);
-            fileExtension = 'wav';
-        }
-
-        const url = URL.createObjectURL(audioBlob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `financial-summary.${fileExtension}`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+      const audioSummary = apiConfig.provider === 'openrouter' 
+        ? await generateOpenRouterAudioSummary(data.summary, apiConfig.voiceModel)
+        : await generateAudioSummary(data.summary, apiConfig.voiceModel);
+      
+      setAudioUrl(audioSummary);
     } catch (error) {
-        // Sanitize error for user display
-        const message = sanitizeErrorForUser(error, 'Audio Generation');
-        setAudioError(message);
+      console.error('Error generating audio:', error);
     } finally {
-        setIsGeneratingAudio(false);
+      setIsGeneratingAudio(false);
     }
   };
 
-  const getVerificationStatusStyles = () => {
-    switch(verification.overallStatus) {
-        case 'Passed': return { text: 'text-green-700', bg: 'bg-green-100'};
-        case 'Passed with Warnings': return { text: 'text-yellow-700', bg: 'bg-yellow-100'};
-        case 'Failed': return { text: 'text-red-700', bg: 'bg-red-100' };
-        default: return { text: 'text-gray-700', bg: 'bg-gray-100' };
+  const handleDownloadPdf = async () => {
+    setIsGeneratingPdf(true);
+    try {
+      const pdfUrl = await generateAASBPdf(data, companyName);
+      const link = document.createElement('a');
+      link.href = pdfUrl;
+      link.download = `${companyName.replace(/\s+/g, '_')}_Financial_Report_2025.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+    } finally {
+      setIsGeneratingPdf(false);
     }
-  }
-  const statusStyles = getVerificationStatusStyles();
+  };
 
   return (
-    <div className="animate-fade-in">
-        {/* Top Controls */}
-        <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
-            <div className="flex items-center gap-4">
-                <h2 className="text-2xl font-bold">Generated Report</h2>
-                <div className={`text-sm font-semibold py-1 px-3 rounded-full flex items-center gap-2 ${statusStyles.bg}`}>
-                   <span className={`${statusStyles.text}`}>●</span>
-                   <span className={statusStyles.text}>Verification: {verification.overallStatus}</span>
-                </div>
-            </div>
-            <div className="flex flex-wrap justify-end gap-4">
-                <button
-                    onClick={onReset}
-                    className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition-colors"
-                  >
-                    Analyze New Reports
-                </button>
-                <button
-                    onClick={handleDownloadAudio}
-                    disabled={isGeneratingAudio}
-                    className="bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 px-4 rounded-lg transition-colors flex items-center gap-2 disabled:bg-teal-300 disabled:cursor-not-allowed"
-                >
-                     {isGeneratingAudio ? (
-                        <>
-                            <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                            Generating...
-                        </>
-                     ) : (
-                        <>
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                              <path d="M5 4a1 1 0 00-2 0v7.268a2 2 0 000 3.464V16a1 1 0 102 0v-1.268a2 2 0 000-3.464V4zM11 4a1 1 0 10-2 0v1.268a2 2 0 000 3.464V16a1 1 0 102 0V8.732a2 2 0 000-3.464V4zM15 3a1 1 0 011 1v12a1 1 0 11-2 0V4a1 1 0 011-1z" />
-                            </svg>
-                            Download Audio
-                        </>
-                     )}
-                </button>
-                
-                {(activeTab === 'report' || activeTab === 'aasb') && (
-                    <button
-                        onClick={() => setIsEditing(!isEditing)}
-                        className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg transition-colors flex items-center gap-2"
-                      >
-                        {isEditing ? (
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
-                        ) : (
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" /><path fillRule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clipRule="evenodd" /></svg>
-                        )}
-                        {isEditing ? 'Finish Editing' : 'Edit Report'}
-                    </button>
-                )}
-                {activeTab === 'report' && (
-                    <button
-                        onClick={handleDownloadViewPdf}
-                        className="bg-sky-600 hover:bg-sky-700 text-white font-bold py-2 px-4 rounded-lg transition-colors flex items-center gap-2"
-                    >
-                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
-                        Download View as PDF
-                    </button>
-                )}
-            </div>
+    <div className="max-w-6xl mx-auto p-4">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-3xl font-bold text-gray-900">{companyName} - 2025 Financial Report</h1>
+        <div className="flex gap-4">
+          <button
+            onClick={handleGenerateAudio}
+            disabled={isGeneratingAudio}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400"
+          >
+            {isGeneratingAudio ? 'Generating Audio...' : 'Generate Audio Summary'}
+          </button>
+          <button
+            onClick={handleDownloadPdf}
+            disabled={isGeneratingPdf}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400"
+          >
+            {isGeneratingPdf ? 'Generating PDF...' : 'Download PDF'}
+          </button>
+          <button
+            onClick={onReset}
+            className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+          >
+            Generate New Report
+          </button>
         </div>
-        {audioError && <div className="text-center mb-4 bg-red-100 border border-red-300 p-3 rounded-lg text-red-600 text-sm">{audioError}</div>}
+      </div>
 
-        {/* Tabs */}
-        <div className="border-b border-gray-300 mb-6">
-            <nav className="-mb-px flex space-x-8" aria-label="Tabs">
-                <button
-                    onClick={() => setActiveTab('report')}
-                    className={`${activeTab === 'report' ? 'border-sky-600 text-sky-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-400'}
-                    whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors`}
-                >
-                    Financial Report
-                </button>
-                 <button
-                    onClick={() => setActiveTab('aasb')}
-                    className={`${activeTab === 'aasb' ? 'border-sky-600 text-sky-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-400'}
-                    whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors`}
-                >
-                    AASB Report
-                </button>
-                <button
-                    onClick={() => setActiveTab('verification')}
-                    className={`${activeTab === 'verification' ? 'border-sky-600 text-sky-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-400'}
-                    whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-2`}
-                >
-                    Verification Certificate
-                    {verification.overallStatus === 'Failed' && <span className="w-2.5 h-2.5 bg-red-500 rounded-full"></span>}
-                    {verification.overallStatus === 'Passed with Warnings' && <span className="w-2.5 h-2.5 bg-yellow-500 rounded-full"></span>}
-                </button>
-            </nav>
+      {audioUrl && (
+        <div className="mb-6 p-4 bg-green-50 rounded-lg">
+          <h3 className="text-lg font-semibold text-green-800 mb-2">Audio Summary</h3>
+          <audio ref={audioRef} controls className="w-full">
+            <source src={audioUrl} type="audio/mpeg" />
+            Your browser does not support the audio element.
+          </audio>
+        </div>
+      )}
+
+      <div className="bg-white rounded-lg shadow-lg p-6">
+        <div className="mb-6">
+          <h2 className="text-2xl font-bold text-gray-900 mb-4">Financial Report Summary</h2>
+          <p className="text-gray-700 text-lg">{data.summary}</p>
         </div>
 
-        {/* Tab Content */}
-        {activeTab === 'report' ? (
-             <div ref={reportRef} className="space-y-8 p-4 bg-white">
-              {/* Summary Section */}
-              <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-                <h2 className="text-2xl font-bold text-sky-600 mb-3">Financial Summary</h2>
-                <p 
-                  contentEditable={isEditing}
-                  suppressContentEditableWarning={true}
-                  className={`text-gray-700 leading-relaxed ${isEditing ? 'p-2 rounded outline-dashed outline-1 outline-sky-500' : ''}`}
-                >
-                  {data.summary}
-                </p>
-              </div>
-              
-              {/* KPIs Section */}
-              <div>
-                <h2 className="text-2xl font-bold mb-4">Key Performance Indicators</h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                  {data.kpis.map((kpi) => (
-                    <KPICard key={kpi.name} kpi={kpi} />
-                  ))}
-                </div>
-              </div>
-
-              {/* Visualizations Section */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-                    <h2 className="text-xl font-bold text-center mb-4">Income Statement</h2>
-                    <ComparisonChart data={[ { item: 'Revenue', ...incomeStatement.revenue.reduce((acc, cv) => ({ amount2024: acc.amount2024 + cv.amount2024, amount2025: acc.amount2025 + cv.amount2025 }), {amount2024: 0, amount2025: 0})}, { item: 'Net Profit', ...incomeStatement.netProfit } ]} />
-                </div>
-                <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-                    <h2 className="text-xl font-bold text-center mb-4">Balance Sheet</h2>
-                     <ComparisonChart data={[ { item: 'Total Assets', ...balanceSheet.totalAssets }, { item: 'Total Liabilities', ...balanceSheet.totalLiabilities }, { item: 'Total Equity', ...balanceSheet.totalEquity } ]} />
-                </div>
-                 <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-                    <h2 className="text-xl font-bold text-center mb-4">Cash Flow</h2>
-                     <ComparisonChart data={[ { item: 'Operating', ...cashFlowStatement.operatingActivities.reduce((acc, cv) => ({ amount2024: acc.amount2024 + cv.amount2024, amount2025: acc.amount2025 + cv.amount2025 }), {amount2024: 0, amount2025: 0}) }, { item: 'Investing', ...cashFlowStatement.investingActivities.reduce((acc, cv) => ({ amount2024: acc.amount2024 + cv.amount2024, amount2025: acc.amount2025 + cv.amount2025 }), {amount2024: 0, amount2025: 0}) }, { item: 'Financing', ...cashFlowStatement.financingActivities.reduce((acc, cv) => ({ amount2024: acc.amount2024 + cv.amount2024, amount2025: acc.amount2025 + cv.amount2025 }), {amount2024: 0, amount2025: 0}) } ]} />
-                </div>
-              </div>
-              
-              {/* Data Tables Section */}
-                <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-                    <h2 className="text-2xl font-bold mb-4">Income Statement</h2>
-                    <h3 className="text-lg font-semibold text-sky-600 mt-4 mb-2">Revenue</h3>
-                    <ComparisonTable items={incomeStatement.revenue} isEditing={isEditing} />
-                    <SummaryRow title="Gross Profit" values={incomeStatement.grossProfit} isEditing={isEditing} />
-                    <h3 className="text-lg font-semibold text-sky-600 mt-6 mb-2">Operating Expenses</h3>
-                    <ComparisonTable items={incomeStatement.expenses} isEditing={isEditing} />
-                    <SummaryRow title="Operating Income" values={incomeStatement.operatingIncome} isEditing={isEditing} />
-                    <SummaryRow title="Net Profit/Loss" values={incomeStatement.netProfit} isEditing={isEditing} />
-                </div>
-
-                <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-                    <h2 className="text-2xl font-bold mb-4">Balance Sheet</h2>
-                    <h3 className="text-lg font-semibold text-sky-600 mt-4 mb-2">Assets</h3>
-                    <p className="text-md font-semibold text-gray-700 mt-4 mb-2 pl-4">Current Assets</p>
-                    <ComparisonTable items={balanceSheet.currentAssets} isEditing={isEditing} />
-                    <p className="text-md font-semibold text-gray-700 mt-4 mb-2 pl-4">Non-Current Assets</p>
-                    <ComparisonTable items={balanceSheet.nonCurrentAssets} isEditing={isEditing} />
-                    <SummaryRow title="Total Assets" values={balanceSheet.totalAssets} isEditing={isEditing} />
-
-                    <h3 className="text-lg font-semibold text-sky-600 mt-6 mb-2">Liabilities & Equity</h3>
-                     <p className="text-md font-semibold text-gray-700 mt-4 mb-2 pl-4">Current Liabilities</p>
-                    <ComparisonTable items={balanceSheet.currentLiabilities} isEditing={isEditing} />
-                     <p className="text-md font-semibold text-gray-700 mt-4 mb-2 pl-4">Non-Current Liabilities</p>
-                    <ComparisonTable items={balanceSheet.nonCurrentLiabilities} isEditing={isEditing} />
-                    <SummaryRow title="Total Liabilities" values={balanceSheet.totalLiabilities} isEditing={isEditing} />
-                     <p className="text-md font-semibold text-gray-700 mt-4 mb-2 pl-4">Equity</p>
-                    <ComparisonTable items={balanceSheet.equity} isEditing={isEditing} />
-                    <SummaryRow title="Total Equity" values={balanceSheet.totalEquity} isEditing={isEditing} />
-                </div>
-
-                <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-                    <h2 className="text-2xl font-bold mb-4">Statement of Cash Flows</h2>
-                    <h3 className="text-lg font-semibold text-sky-600 mt-4 mb-2">Operating Activities</h3>
-                    <ComparisonTable items={cashFlowStatement.operatingActivities} isEditing={isEditing} />
-                    <h3 className="text-lg font-semibold text-sky-600 mt-6 mb-2">Investing Activities</h3>
-                    <ComparisonTable items={cashFlowStatement.investingActivities} isEditing={isEditing} />
-                    <h3 className="text-lg font-semibold text-sky-600 mt-6 mb-2">Financing Activities</h3>
-                    <ComparisonTable items={cashFlowStatement.financingActivities} isEditing={isEditing} />
-                    <SummaryRow title="Net Change in Cash" values={cashFlowStatement.netChangeInCash} isEditing={isEditing} />
-                </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+          <div className="bg-blue-50 p-4 rounded-lg">
+            <h3 className="text-lg font-semibold text-blue-800 mb-2">Income Statement</h3>
+            <div className="space-y-2 text-sm">
+              <div>Total Revenue: ${data.incomeStatement.totalRevenue.toLocaleString()}</div>
+              <div>Total Expenses: ${data.incomeStatement.totalExpenses.toLocaleString()}</div>
+              <div>Net Income: ${data.incomeStatement.netIncome.toLocaleString()}</div>
+              <div>Gross Profit Margin: {(data.incomeStatement.grossProfitMargin * 100).toFixed(1)}%</div>
             </div>
-        ) : activeTab === 'aasb' ? (
-            <AASBPreview 
-              data={data}
-              companyName={companyName}
-              onGeneratePdf={handleDownloadAASBPdf}
-              isGeneratingPdf={isGeneratingAASBPdf}
-              isEditing={isEditing}
-            />
-        ) : (
-            <VerificationCertificate certificate={verification} />
+          </div>
+
+          <div className="bg-green-50 p-4 rounded-lg">
+            <h3 className="text-lg font-semibold text-green-800 mb-2">Balance Sheet</h3>
+            <div className="space-y-2 text-sm">
+              <div>Total Assets: ${data.balanceSheet.totalAssets.toLocaleString()}</div>
+              <div>Total Liabilities: ${data.balanceSheet.totalLiabilities.toLocaleString()}</div>
+              <div>Shareholders Equity: ${data.balanceSheet.shareholdersEquity.toLocaleString()}</div>
+            </div>
+          </div>
+
+          <div className="bg-purple-50 p-4 rounded-lg">
+            <h3 className="text-lg font-semibold text-purple-800 mb-2">Cash Flow</h3>
+            <div className="space-y-2 text-sm">
+              <div>Operating: ${data.cashFlow.operatingCashFlow.toLocaleString()}</div>
+              <div>Investing: ${data.cashFlow.investingCashFlow.toLocaleString()}</div>
+              <div>Financing: ${data.cashFlow.financingCashFlow.toLocaleString()}</div>
+              <div>Net Cash Flow: ${data.cashFlow.netCashFlow.toLocaleString()}</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="mb-8">
+          <h3 className="text-xl font-semibold text-gray-900 mb-4">Key Performance Indicators</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="text-center p-4 bg-gray-50 rounded-lg">
+              <div className="text-2xl font-bold text-gray-900">{data.keyMetrics.currentRatio.toFixed(2)}</div>
+              <div className="text-sm text-gray-600">Current Ratio</div>
+            </div>
+            <div className="text-center p-4 bg-gray-50 rounded-lg">
+              <div className="text-2xl font-bold text-gray-900">{data.keyMetrics.debtToEquity.toFixed(2)}</div>
+              <div className="text-sm text-gray-600">Debt to Equity</div>
+            </div>
+            <div className="text-center p-4 bg-gray-50 rounded-lg">
+              <div className="text-2xl font-bold text-gray-900">{(data.keyMetrics.returnOnEquity * 100).toFixed(1)}%</div>
+              <div className="text-sm text-gray-600">Return on Equity</div>
+            </div>
+            <div className="text-center p-4 bg-gray-50 rounded-lg">
+              <div className="text-2xl font-bold text-gray-900">{(data.keyMetrics.profitMargin * 100).toFixed(1)}%</div>
+              <div className="text-sm text-gray-600">Profit Margin</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+          <div>
+            <h3 className="text-xl font-semibold text-gray-900 mb-4">Strengths</h3>
+            <ul className="space-y-2">
+              {data.analysis.strengths.map((strength, index) => (
+                <li key={index} className="flex items-center text-green-700">
+                  <span className="mr-2">✓</span>
+                  {strength}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div>
+            <h3 className="text-xl font-semibold text-gray-900 mb-4">Weaknesses</h3>
+            <ul className="space-y-2">
+              {data.analysis.weaknesses.map((weakness, index) => (
+                <li key={index} className="flex items-center text-red-700">
+                  <span className="mr-2">✗</span>
+                  {weakness}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+
+        {verification.overallStatus === 'Failed' && (
+          <div className="mb-8 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <h3 className="text-lg font-semibold text-yellow-800 mb-2">Verification Issues</h3>
+            <ul className="space-y-2">
+              {verification.issues.map((issue, index) => (
+                <li key={index} className="text-yellow-700">
+                  <span className="font-medium">{issue.category}:</span> {issue.description}
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
+
+        <div className="text-sm text-gray-500 text-center mt-8">
+          Report generated on {new Date(data.dateGenerated).toLocaleDateString()} at {new Date(data.dateGenerated).toLocaleTimeString()}
+        </div>
+      </div>
     </div>
   );
 };
