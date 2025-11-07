@@ -26,8 +26,8 @@ const ReportDisplay: React.FC<ReportDisplayProps> = ({ data, verification, onRes
     setIsGeneratingAudio(true);
     try {
       const audioSummary = apiConfig.provider === 'openrouter' 
-        ? await generateOpenRouterAudioSummary(data.summary, apiConfig.voiceModel)
-        : await generateAudioSummary(data.summary, apiConfig.voiceModel);
+        ? await generateOpenRouterAudioSummary(data.summary, apiConfig)
+        : await generateAudioSummary(data.summary, apiConfig);
       
       setAudioUrl(audioSummary);
     } catch (error) {
@@ -102,78 +102,64 @@ const ReportDisplay: React.FC<ReportDisplayProps> = ({ data, verification, onRes
           <div className="bg-blue-50 p-4 rounded-lg">
             <h3 className="text-lg font-semibold text-blue-800 mb-2">Income Statement</h3>
             <div className="space-y-2 text-sm">
-              <div>Total Revenue: ${data.incomeStatement.totalRevenue.toLocaleString()}</div>
-              <div>Total Expenses: ${data.incomeStatement.totalExpenses.toLocaleString()}</div>
-              <div>Net Income: ${data.incomeStatement.netIncome.toLocaleString()}</div>
-              <div>Gross Profit Margin: {(data.incomeStatement.grossProfitMargin * 100).toFixed(1)}%</div>
+              <div>Revenue Items: {data.incomeStatement.revenue.length}</div>
+              <div>Expense Items: {data.incomeStatement.expenses.length}</div>
+              <div>Gross Profit: ${data.incomeStatement.grossProfit.amount2025.toLocaleString()}</div>
+              <div>Net Profit: ${data.incomeStatement.netProfit.amount2025.toLocaleString()}</div>
             </div>
           </div>
 
           <div className="bg-green-50 p-4 rounded-lg">
             <h3 className="text-lg font-semibold text-green-800 mb-2">Balance Sheet</h3>
             <div className="space-y-2 text-sm">
-              <div>Total Assets: ${data.balanceSheet.totalAssets.toLocaleString()}</div>
-              <div>Total Liabilities: ${data.balanceSheet.totalLiabilities.toLocaleString()}</div>
-              <div>Shareholders Equity: ${data.balanceSheet.shareholdersEquity.toLocaleString()}</div>
+              <div>Total Assets: ${data.balanceSheet.totalAssets.amount2025.toLocaleString()}</div>
+              <div>Total Liabilities: ${data.balanceSheet.totalLiabilities.amount2025.toLocaleString()}</div>
+              <div>Total Equity: ${data.balanceSheet.totalEquity.amount2025.toLocaleString()}</div>
             </div>
           </div>
 
           <div className="bg-purple-50 p-4 rounded-lg">
             <h3 className="text-lg font-semibold text-purple-800 mb-2">Cash Flow</h3>
             <div className="space-y-2 text-sm">
-              <div>Operating: ${data.cashFlow.operatingCashFlow.toLocaleString()}</div>
-              <div>Investing: ${data.cashFlow.investingCashFlow.toLocaleString()}</div>
-              <div>Financing: ${data.cashFlow.financingCashFlow.toLocaleString()}</div>
-              <div>Net Cash Flow: ${data.cashFlow.netCashFlow.toLocaleString()}</div>
+              <div>Operating Activities: {data.cashFlowStatement.operatingActivities.length} items</div>
+              <div>Investing Activities: {data.cashFlowStatement.investingActivities.length} items</div>
+              <div>Financing Activities: {data.cashFlowStatement.financingActivities.length} items</div>
+              <div>Net Change: ${data.cashFlowStatement.netChangeInCash.amount2025.toLocaleString()}</div>
             </div>
           </div>
         </div>
 
         <div className="mb-8">
           <h3 className="text-xl font-semibold text-gray-900 mb-4">Key Performance Indicators</h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="text-center p-4 bg-gray-50 rounded-lg">
-              <div className="text-2xl font-bold text-gray-900">{data.keyMetrics.currentRatio.toFixed(2)}</div>
-              <div className="text-sm text-gray-600">Current Ratio</div>
-            </div>
-            <div className="text-center p-4 bg-gray-50 rounded-lg">
-              <div className="text-2xl font-bold text-gray-900">{data.keyMetrics.debtToEquity.toFixed(2)}</div>
-              <div className="text-sm text-gray-600">Debt to Equity</div>
-            </div>
-            <div className="text-center p-4 bg-gray-50 rounded-lg">
-              <div className="text-2xl font-bold text-gray-900">{(data.keyMetrics.returnOnEquity * 100).toFixed(1)}%</div>
-              <div className="text-sm text-gray-600">Return on Equity</div>
-            </div>
-            <div className="text-center p-4 bg-gray-50 rounded-lg">
-              <div className="text-2xl font-bold text-gray-900">{(data.keyMetrics.profitMargin * 100).toFixed(1)}%</div>
-              <div className="text-sm text-gray-600">Profit Margin</div>
-            </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {data.kpis.map((kpi, index) => (
+              <div key={index} className="text-center p-4 bg-gray-50 rounded-lg">
+                <div className="text-2xl font-bold text-gray-900">{kpi.value2025}</div>
+                <div className="text-sm text-gray-600">{kpi.name}</div>
+                <div className={`text-xs mt-1 ${kpi.changePercentage >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {kpi.changePercentage >= 0 ? '↑' : '↓'} {Math.abs(kpi.changePercentage)}%
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
-          <div>
-            <h3 className="text-xl font-semibold text-gray-900 mb-4">Strengths</h3>
-            <ul className="space-y-2">
-              {data.analysis.strengths.map((strength, index) => (
-                <li key={index} className="flex items-center text-green-700">
-                  <span className="mr-2">✓</span>
-                  {strength}
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <div>
-            <h3 className="text-xl font-semibold text-gray-900 mb-4">Weaknesses</h3>
-            <ul className="space-y-2">
-              {data.analysis.weaknesses.map((weakness, index) => (
-                <li key={index} className="flex items-center text-red-700">
-                  <span className="mr-2">✗</span>
-                  {weakness}
-                </li>
-              ))}
-            </ul>
+        <div className="mb-8">
+          <h3 className="text-xl font-semibold text-gray-900 mb-4">Directors Declaration</h3>
+          <div className="bg-gray-50 p-4 rounded-lg">
+            <div className="text-sm text-gray-700">
+              <strong>Date:</strong> {data.directorsDeclaration.date}
+            </div>
+            <div className="mt-2">
+              <strong>Directors:</strong>
+              <ul className="mt-1 space-y-1">
+                {data.directorsDeclaration.directors.map((director, index) => (
+                  <li key={index} className="text-sm text-gray-600">
+                    • {director.name} - {director.title}
+                  </li>
+                ))}
+              </ul>
+            </div>
           </div>
         </div>
 
@@ -181,9 +167,9 @@ const ReportDisplay: React.FC<ReportDisplayProps> = ({ data, verification, onRes
           <div className="mb-8 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
             <h3 className="text-lg font-semibold text-yellow-800 mb-2">Verification Issues</h3>
             <ul className="space-y-2">
-              {verification.issues.map((issue, index) => (
+              {verification.checks.filter(check => !check.passed).map((check, index) => (
                 <li key={index} className="text-yellow-700">
-                  <span className="font-medium">{issue.category}:</span> {issue.description}
+                  <span className="font-medium">{check.name}:</span> {check.notes || 'Failed verification'}
                 </li>
               ))}
             </ul>
@@ -191,7 +177,7 @@ const ReportDisplay: React.FC<ReportDisplayProps> = ({ data, verification, onRes
         )}
 
         <div className="text-sm text-gray-500 text-center mt-8">
-          Report generated on {new Date(data.dateGenerated).toLocaleDateString()} at {new Date(data.dateGenerated).toLocaleTimeString()}
+          Report generated on {new Date().toLocaleDateString()} at {new Date().toLocaleTimeString()}
         </div>
       </div>
     </div>

@@ -5,8 +5,8 @@ import { verifyReportData } from './services/verificationService';
 import { CrewAIWorkflowEngine, createFinancialReportWorkflow, Workflow } from './services/crewaiWorkflow';
 import Header from './components/Header';
 import ReportDisplay from './components/ReportDisplay';
-import FileUpload from './components/FileUpload';
-import ApiConfig from './components/ApiConfig';
+import { FileUpload } from './components/FileUpload';
+import { ApiConfig } from './components/ApiConfig';
 
 type ApiProvider = 'gemini' | 'openrouter';
 
@@ -40,8 +40,8 @@ const App: React.FC = () => {
   const [companyName, setCompanyName] = useState<string>('');
 
   // New state for API config
-  const [apiProvider, setApiProvider] = useState<ApiProvider>('gemini');
-  const [apiKey, setApiKey] = useState<string>('');
+  const [apiProvider, setApiProvider] = useState<ApiProvider>('openrouter');
+  const [apiKey, setApiKey] = useState<string>('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');
   const [model, setModel] = useState<string>('gemini-2.5-flash');
   const [voiceModel, setVoiceModel] = useState<string>('elevenlabs/eleven-multilingual-v2');
 
@@ -290,15 +290,14 @@ const App: React.FC = () => {
                 </p>
 
                 <ApiConfig 
-                  provider={apiProvider}
-                  apiKey={apiKey}
-                  model={model}
-                  voiceModel={voiceModel}
-                  onProviderChange={setApiProvider}
-                  onApiKeyChange={setApiKey}
-                  onModelChange={setModel}
-                  onVoiceModelChange={setVoiceModel}
-                  onWorkflowChange={handleWorkflowChange}
+                  onConfigChange={(config) => {
+                    setApiProvider(config.provider);
+                    setApiKey(config.apiKey);
+                  }}
+                  initialConfig={{
+                    provider: apiProvider,
+                    apiKey: apiKey
+                  }}
                 />
 
                 {/* CrewAI Toggle */}
@@ -359,20 +358,20 @@ const App: React.FC = () => {
                         />
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                      <FileUpload 
-                        label="Upload 2024 Full Financial Statement"
-                        selectedFile={file2024}
-                        onFileSelect={setFile2024}
-                        onFileRemove={() => setFile2024(null)}
-                        acceptedFormats="image/*,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                      />
-                      <FileUpload 
-                        label="Upload 2025 Current Financial Data"
-                        selectedFile={file2025}
-                        onFileSelect={setFile2025}
-                        onFileRemove={() => setFile2025(null)}
-                        acceptedFormats="image/*,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                      />
+                      <div>
+                        <label className="block mb-2 text-sm font-medium text-gray-700">Upload 2024 Full Financial Statement</label>
+                        <FileUpload 
+                          onFileSelect={setFile2024}
+                          acceptedTypes={["image/*", "application/pdf", "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"]}
+                        />
+                      </div>
+                      <div>
+                        <label className="block mb-2 text-sm font-medium text-gray-700">Upload 2025 Current Financial Data</label>
+                        <FileUpload 
+                          onFileSelect={setFile2025}
+                          acceptedTypes={["image/*", "application/pdf", "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"]}
+                        />
+                      </div>
                     </div>
                 </div>
                 
